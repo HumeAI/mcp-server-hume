@@ -8,8 +8,8 @@ import * as path from "path";
 import * as os from "os";
 import { PostedContextWithGenerationId, PostedTts, PostedUtterance } from 'hume/api/resources/tts';
 
-// Global map to store audio data by generationId
-export const audioMap = new Map<string, Uint8Array>();
+// Global map to store file paths by generationId
+export const audioMap = new Map<string, string>();
 
 // Create server instance
 const server = new McpServer({
@@ -24,15 +24,23 @@ const hume = new HumeClient({
 // Register TTS tool with expanded options
 server.tool(
   "tts",
-  "Synthesizes speech from text.",
+  `Synthesizes speech from text.
+
+This tool is useful for
+a) Character design:
+  To design a character, first read the prompting guide at https://dev.hume.ai/docs/text-to-speech-tts/prompting if you can. Then, prompt the user to specify what qualities they desire in the character's voice, such as gender, accent, pitch, role/context, emotionality. Then, write a highly stylized sample text (e.g. use dialect if there's an accent, use CAPITAL LETTERS for emphasis if there's emotion, use ellipses if there's pausing.) along with a voice description. Use these with the 'tts' tool to generate several variants. Play the audio with the 'play_audio' tool and ask the user what they think. If they like them, use the 'save_voice' tool to give the voice a name.
+
+b) Generating speech:
+  If the user has text and has already created a voice, or has a generation to continue from, or desires to have text spoken with a novel voice, use the 'tts' tool to create audio files from the speech. For longer texts, typically break them up into shorter segments, and use continuation to tackle them piece by piece. Usually, you should 'play_audio' to present the user with the results. If they like it (and if you have filesystem access) you should save the audio segment (copy it over from the temporary directory) into a more permanent location specified by the user.
+  `,
   {
     text: z.string().describe("The input text to be synthesized into speech."),
     description: z.string().optional().describe(`Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`),
-    continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests."),
+    continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first."),
     numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
     voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
   },
-  async ({ text, description, continuationOf, voiceName }) => {
+  async ({ text, description, continuationOf, voiceName, numGenerations }) => {
     // Create the utterance with voice if specified
     let utterance: PostedUtterance = description ? { text, description } : { text };
     if (voiceName) {
@@ -50,6 +58,7 @@ server.tool(
     const request: PostedTts = {
       utterances: [utterance],
       ...(context ? { context } : {}), // conditionally add context
+      numGenerations,
     }
 
     console.error(`Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
@@ -57,17 +66,35 @@ server.tool(
 
     try {
       const response = await hume.tts.synthesizeJson(request)
+      // Create temporary directory for audio files
+      const tempDir = path.join(os.tmpdir(), 'hume-tts');
+      
+      // Ensure directory exists
+      await fs.mkdir(tempDir, { recursive: true });
+      
       for (const generation of response.generations) {
         const { generationId } = generation;
         const audioData = Buffer.from(generation.audio, 'base64');
-        audioMap.set(generationId, audioData);
-        console.error(`Stored audio for generationId: ${generationId}, created at ${createdAt}`);
+        
+        // Create a temporary file to store the audio
+        const tempFilePath = path.join(tempDir, `${generationId}.wav`);
+        
+        // Write audio to file
+        await fs.writeFile(tempFilePath, audioData);
+        
+        // Store the file path
+        audioMap.set(generationId, tempFilePath);
+        
+        console.error(`Stored audio for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`);
       }
       return {
         content: [
           {
             type: "text",
-            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}", generation ids: ${response.generations.map(g => g.generationId).join(", ")}`,
+            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}", generation ids: ${response.generations.map(g => {
+              const filePath = audioMap.get(g.generationId);
+              return `${g.generationId} (file: ${filePath})`;
+            }).join(", ")}`,
           },
         ],
       }
@@ -93,9 +120,9 @@ server.tool(
     generationId: z.string().describe("The generationId of the audio to play"),
   },
   async ({ generationId }) => {
-    const audio = audioMap.get(generationId);
+    const filePath = audioMap.get(generationId);
 
-    if (!audio) {
+    if (!filePath) {
       return {
         content: [
           {
@@ -105,27 +132,24 @@ server.tool(
         ],
       };
     }
-
-    // Create a temporary file to store the audio
-    const tempDir = os.tmpdir();
-    const tempFilePath = path.join(tempDir, `${generationId}.wav`);
-
+    
+    // Check if the file exists
     try {
-      await fs.writeFile(tempFilePath, audio);
+      await fs.access(filePath);
     } catch (error) {
-      console.error(`Error writing audio for play_audio tool: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`File not found: ${filePath}`);
       return {
         content: [
           {
             type: "text",
-            text: `Error playing audio: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Audio file for generationId: ${generationId} was not found at ${filePath}`,
           },
         ],
       };
     }
 
     // Play the audio using ffplay
-    const command = `ffplay -autoexit -nodisp "${tempFilePath}"`;
+    const command = `ffplay -autoexit -nodisp "${filePath}"`;
 
     console.error(`Executing command: ${command}`);
 
@@ -150,17 +174,11 @@ server.tool(
           content: [
             {
               type: "text",
-              text: `Playing audio for generationId: ${generationId}`,
+              text: `Playing audio for generationId: ${generationId}, file: ${filePath}`,
             },
           ],
         });
 
-        // Clean up the temporary file after playing
-        fs.unlink(tempFilePath).then(() => {
-          console.error(`Removed temporary file: ${tempFilePath}`);
-        }).catch((unlinkError) => {
-          console.error(`Error removing temporary file: ${(unlinkError as any).message}`);
-        })
       });
     })
   },
@@ -207,8 +225,8 @@ server.tool(
   },
 );
 
-// Function to get audio data from the map
-export function getAudioData(generationId: string): Uint8Array | undefined {
+// Function to get audio file path from the map
+export function getAudioFilePath(generationId: string): string | undefined {
   return audioMap.get(generationId);
 }
 
