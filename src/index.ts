@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { HumeClient } from "hume"
-import { unknown, z } from "zod";
+import { z } from "zod";
 import { exec } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -29,9 +29,21 @@ server.tool(
     text: z.string().describe("The text to synthesize into speech."),
     description: z.string().optional().describe("Optional description of the speech context or emotion."),
     continuationOf: z.string().optional().describe("Optional generationId to continue speech from a previous generation."),
+    numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
+    voiceName: z.string().optional().describe("Optional name of the voice to use for synthesis."),
   },
-  async ({ text, description, continuationOf }) => {
-    const utterance: PostedUtterance = description ? { text, description } : { text };
+  async ({ text, description, continuationOf, voiceName }) => {
+    // Create the utterance with voice if specified
+    let utterance: PostedUtterance = description ? { text, description } : { text };
+    if (voiceName) {
+      utterance = {
+        ...utterance,
+        voice: {
+          name: voiceName,
+        }
+      };
+    }
+    
     const context: PostedContextWithGenerationId | null = continuationOf ? { generationId: continuationOf } : null;
 
     // Prepare the utterance with optional parameters
@@ -43,31 +55,33 @@ server.tool(
     console.error(`Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
     const createdAt = Date.now()
 
-    hume.tts.synthesizeJson(request).then((response) => {
-      const generation = response.generations[0];
-      const { generationId } = generation;
-
-      // Get the audio data as a buffer
-      const audioData = Buffer.from(generation.audio, 'base64');
-
-      // Store the audio data in the global map using generationId as the key
-      audioMap.set(generationId, audioData);
-
-      server.server.notification({ method: "synthesis complete", params: { generationId, createdAt } });
-      console.error(`Stored audio for generationId: ${generationId}, created at ${createdAt}`);
-    }).catch((error) => {
-      server.server.notification({ method: "synthesis failed", params: { createdAt } });
-      console.error(`Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`);
-    })
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Generation started at ${createdAt}`,
-        },
-      ],
-    };
+    try {
+      const response = await hume.tts.synthesizeJson(request)
+      for (const generation of response.generations) {
+        const { generationId } = generation;
+        const audioData = Buffer.from(generation.audio, 'base64');
+        audioMap.set(generationId, audioData);
+        console.error(`Stored audio for generationId: ${generationId}, created at ${createdAt}`);
+      }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}", generation ids: ${response.generations.map(g => g.generationId).join(", ")}`,
+          },
+        ],
+      }
+    }
+    catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`,
+          }
+        ]
+      }
+    }
   },
 );
 
@@ -149,6 +163,47 @@ server.tool(
         })
       });
     })
+  },
+);
+
+// Add save_voice tool to save a voice to the Voice Library
+server.tool(
+  "save_voice",
+  "Saves a generated voice to your Voice Library for reuse in future TTS requests.",
+  {
+    generationId: z.string().describe("The generationId of the voice to save, obtained from a previous TTS request."),
+    name: z.string().describe("The name to assign to the saved voice. This name can be used in voiceName parameter in future TTS requests."),
+  },
+  async ({ generationId, name }) => {
+    try {
+      console.error(`Saving voice with generationId: ${generationId} as name: "${name}"`);
+      
+      // Call the Hume API to save the voice
+      const response = await hume.tts.voices.create({
+        generationId,
+        name,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully saved voice "${name}" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`,
+          },
+        ],
+      };
+    } catch (error) {
+      console.error(`Error saving voice: ${error instanceof Error ? error.message : String(error)}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true
+      };
+    }
   },
 );
 
