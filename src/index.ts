@@ -26,11 +26,11 @@ server.tool(
   "tts",
   "Synthesizes speech from text.",
   {
-    text: z.string().describe("The text to synthesize into speech."),
-    description: z.string().optional().describe("Optional description of the speech context or emotion."),
-    continuationOf: z.string().optional().describe("Optional generationId to continue speech from a previous generation."),
+    text: z.string().describe("The input text to be synthesized into speech."),
+    description: z.string().optional().describe(`Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`),
+    continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests."),
     numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
-    voiceName: z.string().optional().describe("Optional name of the voice to use for synthesis."),
+    voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
   },
   async ({ text, description, continuationOf, voiceName }) => {
     // Create the utterance with voice if specified
@@ -177,7 +177,7 @@ server.tool(
   async ({ generationId, name }) => {
     try {
       console.error(`Saving voice with generationId: ${generationId} as name: "${name}"`);
-      
+
       // Call the Hume API to save the voice
       const response = await hume.tts.voices.create({
         generationId,
