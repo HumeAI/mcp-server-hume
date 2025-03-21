@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { HumeClient } from "hume"
 import { unknown, z } from "zod";
 import { exec } from "child_process";
-import * as fs from "fs";
+import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { PostedContextWithGenerationId, PostedTts, PostedUtterance } from 'hume/api/resources/tts';
@@ -53,10 +53,10 @@ server.tool(
       // Store the audio data in the global map using generationId as the key
       audioMap.set(generationId, audioData);
 
-      server.server.notification({method: "synthesis complete", params: {generationId, createdAt}});
+      server.server.notification({ method: "synthesis complete", params: { generationId, createdAt } });
       console.error(`Stored audio for generationId: ${generationId}, created at ${createdAt}`);
     }).catch((error) => {
-      server.server.notification({method: "synthesis failed", params: {createdAt}});
+      server.server.notification({ method: "synthesis failed", params: { createdAt } });
       console.error(`Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`);
     })
 
@@ -92,47 +92,14 @@ server.tool(
       };
     }
 
+    // Create a temporary file to store the audio
+    const tempDir = os.tmpdir();
+    const tempFilePath = path.join(tempDir, `${generationId}.wav`);
+
     try {
-      // Create a temporary file to store the audio
-      const tempDir = os.tmpdir();
-      const tempFilePath = path.join(tempDir, `${generationId}.wav`);
-
-      // Write the audio data to the temporary file
-      fs.writeFileSync(tempFilePath, audio);
-
-      // Play the audio using ffplay
-      const command = `ffplay -autoexit -nodisp "${tempFilePath}"`;
-
-      console.error(`Executing command: ${command}`);
-
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Error playing audio: ${error.message}`);
-          return;
-        }
-        if (stderr) {
-          console.error(`ffplay stderr: ${stderr}`);
-        }
-
-        // Clean up the temporary file after playing
-        try {
-          fs.unlinkSync(tempFilePath);
-          console.error(`Removed temporary file: ${tempFilePath}`);
-        } catch (unlinkError) {
-          console.error(`Error removing temporary file: ${(unlinkError as any).message}`);
-        }
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Playing audio for generationId: ${generationId}`,
-          },
-        ],
-      };
+      await fs.writeFile(tempFilePath, audio);
     } catch (error) {
-      console.error(`Error in play_audio tool: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`Error writing audio for play_audio tool: ${error instanceof Error ? error.message : String(error)}`);
       return {
         content: [
           {
@@ -142,6 +109,46 @@ server.tool(
         ],
       };
     }
+
+    // Play the audio using ffplay
+    const command = `ffplay -autoexit -nodisp "${tempFilePath}"`;
+
+    console.error(`Executing command: ${command}`);
+
+    return await new Promise((resolve) => {
+      exec(command, (error, _stdout, stderr) => {
+        if (stderr) {
+          console.error(`ffplay stderr: ${stderr}`);
+        }
+        if (error) {
+          console.error(`Error playing audio: ${error.message}`);
+          return resolve({
+            content: [
+              {
+                type: "text",
+                text: `Error playing audio: ${error.message}`,
+              },
+            ],
+            isError: true
+          });
+        }
+        resolve({
+          content: [
+            {
+              type: "text",
+              text: `Playing audio for generationId: ${generationId}`,
+            },
+          ],
+        });
+
+        // Clean up the temporary file after playing
+        fs.unlink(tempFilePath).then(() => {
+          console.error(`Removed temporary file: ${tempFilePath}`);
+        }).catch((unlinkError) => {
+          console.error(`Error removing temporary file: ${(unlinkError as any).message}`);
+        })
+      });
+    })
   },
 );
 
