@@ -42,10 +42,9 @@ b) Generating speech:
     })),
     voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
     continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first."),
-    numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
-    play: z.enum(['all', 'first', 'off']).optional().default('all').describe("Whether to play back the generated audio for all generations, only the first generation, or no generations."),
+    quiet: z.boolean().default(false).describe("Whether to skip playing back the generated audio.")
   },
-  async ({ continuationOf, voiceName, numGenerations, play, utterances: utterancesInput }) => {
+  async ({ continuationOf, voiceName, quiet, utterances: utterancesInput }) => {
     // Create the utterance with voice if specified
     const utterances: Array<PostedUtterance> = [];
     for (const utt of utterancesInput) {
@@ -70,7 +69,6 @@ b) Generating speech:
     const request: PostedTts = {
       utterances,
       ...(context ? { context } : {}), // conditionally add context
-      numGenerations,
     }
 
     const text = utterances.map(u => u.text).join(" ")
@@ -88,7 +86,6 @@ b) Generating speech:
 
       let playback = Promise.resolve()
       let firstGeneration: string | null = null
-      const player = new DeinterleavingPlayer()
       for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
         const { audio, chunkIndex, generationId } = audioChunk;
 
@@ -106,11 +103,8 @@ b) Generating speech:
         // Write audio to file
         await fs.writeFile(tempFilePath, audioData);
 
-        const shouldPlay = play === 'all' || (play === 'first' && firstGeneration === generationId);
-        if (shouldPlay) {
-          console.error('Enqueued audio chunk for playback:', generationId, chunkIndex);
-          player.enqueue(generationId, audioChunk.isLastChunk, chunkIndex, tempFilePath);
-          player.playNextAudio()
+        if (!quiet) {
+          playback = playback.then(() => playAudio(tempFilePath));
         }
 
         // Store the file path
