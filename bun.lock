@@ -5,7 +5,7 @@
       "name": "mcp-server-hume",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.7.0",
-        "hume": "^0.9.12",
+        "hume": "^0.9.17",
         "zod": "^3.24.2",
       },
       "devDependencies": {
@@ -122,7 +122,7 @@
 
     "http-errors": ["http-errors@2.0.0", "", { "dependencies": { "depd": "2.0.0", "inherits": "2.0.4", "setprototypeof": "1.2.0", "statuses": "2.0.1", "toidentifier": "1.0.1" } }, "sha512-FtwrG/euBzaEjYeRqOgly7G0qviiXoJWnvEH2Z1plBdXgbyjv34pHTSb9zoeHMyDy33+DWy5Wt9Wo+TURtOYSQ=="],
 
-    "hume": ["hume@0.9.12", "", { "dependencies": { "form-data": "^4.0.0", "form-data-encoder": "^4.0.2", "formdata-node": "^6.0.3", "node-fetch": "2.7.0", "qs": "6.11.2", "readable-stream": "^4.5.2", "url-join": "4.0.1", "uuid": "9.0.1", "ws": "^8.14.2", "zod": "^3.23.8" } }, "sha512-JYqVBZVkx/pNNnsOJXjfHsFfownMU+6rP4mkN6P8occaVz/GxMVLVz4oybfa9EY5WTq9njg9btkwKEo0UO+BhQ=="],
+    "hume": ["hume@0.9.17", "", { "dependencies": { "form-data": "^4.0.0", "form-data-encoder": "^4.0.2", "formdata-node": "^6.0.3", "node-fetch": "2.7.0", "qs": "6.11.2", "readable-stream": "^4.5.2", "url-join": "4.0.1", "uuid": "9.0.1", "ws": "^8.14.2", "zod": "^3.23.8" } }, "sha512-ayRHms2sknOH6niKaphR61//N21n//++0HbFgNeGLSxCj1Cc59V8dwGJHRjaPCxT7voCzN5TIewDlpoge+n/fQ=="],
 
     "iconv-lite": ["iconv-lite@0.6.3", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw=="],
 
