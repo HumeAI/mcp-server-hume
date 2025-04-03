@@ -34,34 +34,44 @@ b) Generating speech:
   If the user has text and has already created a voice, or has a generation to continue from, or desires to have text spoken with a novel voice, use the 'tts' tool to create audio files from the speech. For longer texts, typically break them up into shorter segments, and use continuation to tackle them piece by piece. Usually, you should 'play_audio' to present the user with the results. If they like it (and if you have filesystem access) you should save the audio segment (copy it over from the temporary directory) into a more permanent location specified by the user.
   `,
   {
-    text: z.string().describe("The input text to be synthesized into speech."),
-    description: z.string().optional().describe(`Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`),
+    utterances: z.array(z.object({
+      text: z.string().describe("The input text to be synthesized into speech."),
+      description: z.string().optional().describe(`Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`),
+    })),
+    voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
     continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first."),
     numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
-    voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
     play: z.enum(['all', 'first', 'off']).optional().describe("Whether to play back the generated audio for all generations, only the first generation, or no generations."),
   },
-  async ({ text, description, continuationOf, voiceName, numGenerations }) => {
+  async ({ continuationOf, voiceName, numGenerations, play, utterances: utterancesInput }) => {
     // Create the utterance with voice if specified
-    let utterance: PostedUtterance = description ? { text, description } : { text };
-    if (voiceName) {
-      utterance = {
-        ...utterance,
-        voice: {
-          name: voiceName,
-        }
+    const utterances: Array<PostedUtterance> = [];
+    for (const utt of utterancesInput) {
+      let utterance: PostedUtterance = {
+        text: utt.text,
+        description: utt.description ? utt.description : undefined,
       };
+      if (voiceName) {
+        utterance = {
+          ...utterance,
+          voice: {
+            name: voiceName,
+          }
+        };
+      }
+      utterances.push(utterance);
     }
-    
+
     const context: PostedContextWithGenerationId | null = continuationOf ? { generationId: continuationOf } : null;
 
     // Prepare the utterance with optional parameters
     const request: PostedTts = {
-      utterances: [utterance],
+      utterances,
       ...(context ? { context } : {}), // conditionally add context
       numGenerations,
     }
 
+    const text = utterances.map(u => u.text).join(" ")
     console.error(`Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
     const createdAt = Date.now()
 
@@ -73,26 +83,29 @@ b) Generating speech:
       await fs.mkdir(tempDir, { recursive: true });
 
       const generationIds = new Set<string>();
+      let playback = Promise.resolve()
       for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
         const { audio, chunkIndex, generationId } = audioChunk;
 
         generationIds.add(generationId);
 
         const audioData = Buffer.from(audio, 'base64');
-        
+
         // Create a temporary file to store the audio
         const fileName = `${generationId}-chunk-${chunkIndex}.wav`;
         const tempFilePath = path.join(tempDir, fileName);
-        
+
         // Write audio to file
         await fs.writeFile(tempFilePath, audioData);
-        
+        playback = playback.then(() => playAudio(tempFilePath));
+
         // Store the file path
         const generationChunks = audioMap.get(generationId);
         generationChunks ? generationChunks?.push(tempFilePath) : audioMap.set(generationId, [tempFilePath]);
 
         console.error(`Stored audio chunk for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`);
       }
+      await playback
       return {
         content: [
           {
@@ -118,6 +131,21 @@ b) Generating speech:
   },
 );
 
+const playAudio = async (filePath: string) => {
+  const command = `ffplay -autoexit -nodisp "${filePath}"`;
+  await new Promise<void>((resolve, reject) => {
+    exec(command, (error, _stdout, stderr) => {
+      if (stderr) {
+        console.error(`ffplay stderr: ${stderr}`);
+      }
+      if (error) {
+        console.error(`Error playing audio: ${error.message}`);
+        return reject(error.message);
+      }
+      resolve();
+    });
+  })
+}
 // Add the playback tool
 server.tool(
   "play_audio",
@@ -138,7 +166,7 @@ server.tool(
         ],
       };
     }
-    
+
     // Check if the file exists
     const filePath = filePaths[0]
     try {
@@ -163,31 +191,20 @@ server.tool(
     const ret: { type: 'text', text: string }[] = [];
     try {
       for (const filePath in filePaths) {
-        await new Promise((resolve, reject) => {
-          exec(command, (error, _stdout, stderr) => {
-            if (stderr) {
-              console.error(`ffplay stderr: ${stderr}`);
-            }
-            if (error) {
-              console.error(`Error playing audio: ${error.message}`);
-              return reject(error.message);
-            }
-            ret.push({
-              type: "text",
-              text: `Played audio for generationId: ${generationId}, file: ${filePath}`,
-            });
-            resolve({});
-          });
-        })
+        await playAudio(filePath)
+        ret.push({
+          type: "text",
+          text: `Played audio for generationId: ${generationId}, file: ${filePath}`,
+        });
       }
       return { content: ret };
     } catch (e) {
-      return { 
-        content: [{ 
-          type: 'text', 
-          text: (e as Error).message 
-        }], 
-        isError: true 
+      return {
+        content: [{
+          type: 'text',
+          text: (e as Error).message
+        }],
+        isError: true
       }
     }
   },
