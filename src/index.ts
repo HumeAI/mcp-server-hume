@@ -7,6 +7,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { PostedContextWithGenerationId, PostedTts, PostedUtterance } from 'hume/api/resources/tts';
+import DeinterleavingPlayer from "./deinterleaving_player.js";
 
 // Global map to store file paths by generationId
 export const audioMap = new Map<string, string[]>();
@@ -20,6 +21,7 @@ const server = new McpServer({
 const hume = new HumeClient({
   apiKey: process.env.HUME_API_KEY!
 })
+
 
 // Register TTS tool with expanded options
 server.tool(
@@ -41,7 +43,7 @@ b) Generating speech:
     voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
     continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first."),
     numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
-    play: z.enum(['all', 'first', 'off']).optional().describe("Whether to play back the generated audio for all generations, only the first generation, or no generations."),
+    play: z.enum(['all', 'first', 'off']).optional().default('all').describe("Whether to play back the generated audio for all generations, only the first generation, or no generations."),
   },
   async ({ continuationOf, voiceName, numGenerations, play, utterances: utterancesInput }) => {
     // Create the utterance with voice if specified
@@ -83,8 +85,10 @@ b) Generating speech:
       await fs.mkdir(tempDir, { recursive: true });
 
       const generationIds = new Set<string>();
+
       let playback = Promise.resolve()
       let firstGeneration: string | null = null
+      const player = new DeinterleavingPlayer()
       for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
         const { audio, chunkIndex, generationId } = audioChunk;
 
@@ -101,10 +105,12 @@ b) Generating speech:
 
         // Write audio to file
         await fs.writeFile(tempFilePath, audioData);
-        const shouldPlay = play === 'all' || (play === 'first' && firstGeneration === generationId);
 
+        const shouldPlay = play === 'all' || (play === 'first' && firstGeneration === generationId);
         if (shouldPlay) {
-          playback = playback.then(() => playAudio(tempFilePath));
+          console.error('Enqueued audio chunk for playback:', generationId, chunkIndex);
+          player.enqueue(generationId, audioChunk.isLastChunk, chunkIndex, tempFilePath);
+          player.playNextAudio()
         }
 
         // Store the file path
