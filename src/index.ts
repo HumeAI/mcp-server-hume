@@ -31,7 +31,7 @@ a) Character design:
   To design a character, first read the prompting guide at https://dev.hume.ai/docs/text-to-speech-tts/prompting if you can. Then, prompt the user to specify what qualities they desire in the character's voice, such as gender, accent, pitch, role/context, emotionality. Then, write a highly stylized sample text (e.g. use dialect if there's an accent, use CAPITAL LETTERS for emphasis if there's emotion, use ellipses if there's pausing.) along with a voice description. Use these with the 'tts' tool to generate several variants. Play the audio with the 'play_audio' tool and ask the user what they think. If they like them, use the 'save_voice' tool to give the voice a name.
 
 b) Generating speech:
-  If the user has text and has already created a voice, or has a generation to continue from, or desires to have text spoken with a novel voice, use the 'tts' tool to create audio files from the speech. For longer texts, typically break them up into shorter segments, and use continuation to tackle them piece by piece. Usually, you should 'play_audio' to present the user with the results. If they like it (and if you have filesystem access) you should save the audio segment (copy it over from the temporary directory) into a more permanent location specified by the user.
+  If the user has text and has already created a voice, or has a generation to continue from, or desires to have text spoken with a novel voice, use the 'tts' tool to create audio files from the speech. For longer texts, typically break them up into shorter segments, and use continuation to tackle them piece by piece. If they like it (and if you have filesystem access) you should save the audio segment (copy it over from the temporary directory) into a more permanent location specified by the user.
   `,
   {
     utterances: z.array(z.object({
@@ -84,9 +84,13 @@ b) Generating speech:
 
       const generationIds = new Set<string>();
       let playback = Promise.resolve()
+      let firstGeneration: string | null = null
       for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
         const { audio, chunkIndex, generationId } = audioChunk;
 
+        if (generationIds.size === 0) {
+          firstGeneration = generationId
+        }
         generationIds.add(generationId);
 
         const audioData = Buffer.from(audio, 'base64');
@@ -97,7 +101,11 @@ b) Generating speech:
 
         // Write audio to file
         await fs.writeFile(tempFilePath, audioData);
-        playback = playback.then(() => playAudio(tempFilePath));
+        const shouldPlay = play === 'all' || (play === 'first' && firstGeneration === generationId);
+
+        if (shouldPlay) {
+          playback = playback.then(() => playAudio(tempFilePath));
+        }
 
         // Store the file path
         const generationChunks = audioMap.get(generationId);
