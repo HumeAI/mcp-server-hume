@@ -9,7 +9,7 @@ import * as os from "os";
 import { PostedContextWithGenerationId, PostedTts, PostedUtterance } from 'hume/api/resources/tts';
 
 // Global map to store file paths by generationId
-export const audioMap = new Map<string, string>();
+export const audioMap = new Map<string, string[]>();
 
 // Create server instance
 const server = new McpServer({
@@ -39,6 +39,7 @@ b) Generating speech:
     continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first."),
     numGenerations: z.number().optional().default(1).describe("Number of variants to synthesize."),
     voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
+    play: z.enum(['all', 'first', 'off']).optional().describe("Whether to play back the generated audio for all generations, only the first generation, or no generations."),
   },
   async ({ text, description, continuationOf, voiceName, numGenerations }) => {
     // Create the utterance with voice if specified
@@ -65,35 +66,40 @@ b) Generating speech:
     const createdAt = Date.now()
 
     try {
-      const response = await hume.tts.synthesizeJson(request)
       // Create temporary directory for audio files
       const tempDir = path.join(os.tmpdir(), 'hume-tts');
-      
+
       // Ensure directory exists
       await fs.mkdir(tempDir, { recursive: true });
-      
-      for (const generation of response.generations) {
-        const { generationId } = generation;
-        const audioData = Buffer.from(generation.audio, 'base64');
+
+      const generationIds = new Set<string>();
+      for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
+        const { audio, chunkIndex, generationId } = audioChunk;
+
+        generationIds.add(generationId);
+
+        const audioData = Buffer.from(audio, 'base64');
         
         // Create a temporary file to store the audio
-        const tempFilePath = path.join(tempDir, `${generationId}.wav`);
+        const fileName = `${generationId}-chunk-${chunkIndex}.wav`;
+        const tempFilePath = path.join(tempDir, fileName);
         
         // Write audio to file
         await fs.writeFile(tempFilePath, audioData);
         
         // Store the file path
-        audioMap.set(generationId, tempFilePath);
-        
-        console.error(`Stored audio for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`);
+        const generationChunks = audioMap.get(generationId);
+        generationChunks ? generationChunks?.push(tempFilePath) : audioMap.set(generationId, [tempFilePath]);
+
+        console.error(`Stored audio chunk for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`);
       }
       return {
         content: [
           {
             type: "text",
-            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}", generation ids: ${response.generations.map(g => {
-              const filePath = audioMap.get(g.generationId);
-              return `${g.generationId} (file: ${filePath})`;
+            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}", generation ids: ${[...generationIds].map(g => {
+              const filePath = audioMap.get(g);
+              return `${g} (file: ${filePath})`;
             }).join(", ")}`,
           },
         ],
@@ -120,9 +126,9 @@ server.tool(
     generationId: z.string().describe("The generationId of the audio to play"),
   },
   async ({ generationId }) => {
-    const filePath = audioMap.get(generationId);
+    const filePaths = audioMap.get(generationId);
 
-    if (!filePath) {
+    if (!filePaths) {
       return {
         content: [
           {
@@ -134,6 +140,7 @@ server.tool(
     }
     
     // Check if the file exists
+    const filePath = filePaths[0]
     try {
       await fs.access(filePath);
     } catch (error) {
@@ -153,34 +160,36 @@ server.tool(
 
     console.error(`Executing command: ${command}`);
 
-    return await new Promise((resolve) => {
-      exec(command, (error, _stdout, stderr) => {
-        if (stderr) {
-          console.error(`ffplay stderr: ${stderr}`);
-        }
-        if (error) {
-          console.error(`Error playing audio: ${error.message}`);
-          return resolve({
-            content: [
-              {
-                type: "text",
-                text: `Error playing audio: ${error.message}`,
-              },
-            ],
-            isError: true
-          });
-        }
-        resolve({
-          content: [
-            {
+    const ret: { type: 'text', text: string }[] = [];
+    try {
+      for (const filePath in filePaths) {
+        await new Promise((resolve, reject) => {
+          exec(command, (error, _stdout, stderr) => {
+            if (stderr) {
+              console.error(`ffplay stderr: ${stderr}`);
+            }
+            if (error) {
+              console.error(`Error playing audio: ${error.message}`);
+              return reject(error.message);
+            }
+            ret.push({
               type: "text",
-              text: `Playing audio for generationId: ${generationId}, file: ${filePath}`,
-            },
-          ],
-        });
-
-      });
-    })
+              text: `Played audio for generationId: ${generationId}, file: ${filePath}`,
+            });
+            resolve({});
+          });
+        })
+      }
+      return { content: ret };
+    } catch (e) {
+      return { 
+        content: [{ 
+          type: 'text', 
+          text: (e as Error).message 
+        }], 
+        isError: true 
+      }
+    }
   },
 );
 
@@ -224,11 +233,6 @@ server.tool(
     }
   },
 );
-
-// Function to get audio file path from the map
-export function getAudioFilePath(generationId: string): string | undefined {
-  return audioMap.get(generationId);
-}
 
 async function main() {
   const transport = new StdioServerTransport();
