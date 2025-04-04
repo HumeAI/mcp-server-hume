@@ -7,7 +7,6 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
 import { PostedContextWithGenerationId, PostedTts, PostedUtterance } from 'hume/api/resources/tts';
-import DeinterleavingPlayer from "./deinterleaving_player.js";
 
 // Global map to store file paths by generationId
 export const audioMap = new Map<string, string[]>();
@@ -85,19 +84,19 @@ b) Generating speech:
       const generationIds = new Set<string>();
 
       let playback = Promise.resolve()
-      let firstGeneration: string | null = null
-      for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
-        const { audio, chunkIndex, generationId } = audioChunk;
 
-        if (generationIds.size === 0) {
-          firstGeneration = generationId
-        }
+      const chunks = []
+      for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
+        chunks.push(audioChunk)
+        const generationIndex = chunks.filter(chunk => chunk.generationId === audioChunk.generationId).length - 1;
+        const { audio, generationId } = audioChunk;
+
         generationIds.add(generationId);
 
         const audioData = Buffer.from(audio, 'base64');
 
         // Create a temporary file to store the audio
-        const fileName = `${generationId}-chunk-${chunkIndex}.wav`;
+        const fileName = `${generationId}-chunk-${generationIndex}.wav`;
         const tempFilePath = path.join(tempDir, fileName);
 
         // Write audio to file
