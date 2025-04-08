@@ -21,6 +21,13 @@ const server = new McpServer({
 // Global map to store file paths by generationId
 export const audioMap = new Map<string, string[]>();
 
+let logFile: fs.FileHandle; 
+
+const log = (...args: any[]) => {
+  console.error(...args);
+  logFile?.write(JSON.stringify(args) + "\n");
+}
+
 const hume = new HumeClient({
   apiKey: process.env.HUME_API_KEY!,
 });
@@ -98,7 +105,7 @@ b) Generating speech:
     };
 
     const text = utterances.map((u) => u.text).join(" ");
-    console.error(
+    log(
       `Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
     );
     const createdAt = Date.now();
@@ -146,7 +153,7 @@ b) Generating speech:
           ? generationChunks?.push(tempFilePath)
           : audioMap.set(generationId, [tempFilePath]);
 
-        console.error(
+        log(
           `Stored audio chunk for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`,
         );
       }
@@ -184,10 +191,10 @@ const playAudio = async (filePath: string) => {
   await new Promise<void>((resolve, reject) => {
     exec(command, (error, _stdout, stderr) => {
       if (stderr) {
-        console.error(`ffplay stderr: ${stderr}`);
+        log(`ffplay stderr: ${stderr}`);
       }
       if (error) {
-        console.error(`Error playing audio: ${error.message}`);
+        log(`Error playing audio: ${error.message}`);
         return reject(error.message);
       }
       resolve();
@@ -220,7 +227,7 @@ server.tool(
     try {
       await fs.access(filePath);
     } catch (error) {
-      console.error(`File not found: ${filePath}`);
+      log(`File not found: ${filePath}`);
       return {
         content: [
           {
@@ -234,7 +241,7 @@ server.tool(
     // Play the audio using ffplay
     const command = `ffplay -autoexit -nodisp "${filePath}"`;
 
-    console.error(`Executing command: ${command}`);
+    log(`Executing command: ${command}`);
 
     const ret: { type: "text"; text: string }[] = [];
     try {
@@ -273,7 +280,7 @@ server.tool(
     pageNumber: z
       .number()
       .optional()
-      .default(1)
+      .default(0)
       .describe("The page number to retrieve."),
     pageSize: z
       .number()
@@ -283,12 +290,13 @@ server.tool(
   },
   async ({ provider, pageNumber, pageSize }) => {
     try {
-      console.error(`Listing voices for provider: ${provider}`);
+      log(`Listing voices for provider: ${provider}`);
       const voices = await hume.tts.voices.list({
         provider,
         pageNumber,
         pageSize,
       });
+      console.error(`Voices: ${JSON.stringify(voices, null, 2)}`);
       return {
         content: [
           {
@@ -298,7 +306,7 @@ server.tool(
         ],
       };
     } catch (error) {
-      console.error(
+      log(
         `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
       );
       return {
@@ -322,7 +330,7 @@ server.tool(
   },
   async ({ name }) => {
     try {
-      console.error(`Deleting voice with name: ${name}`);
+      log(`Deleting voice with name: ${name}`);
       const response = await hume.tts.voices.delete({
         name,
       });
@@ -335,7 +343,7 @@ server.tool(
         ],
       };
     } catch (error) {
-      console.error(
+      log(
         `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
       );
       return {
@@ -369,7 +377,7 @@ server.tool(
   },
   async ({ generationId, name }) => {
     try {
-      console.error(
+      log(
         `Saving voice with generationId: ${generationId} as name: "${name}"`,
       );
 
@@ -388,7 +396,7 @@ server.tool(
         ],
       };
     } catch (error) {
-      console.error(
+      log(
         `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
       );
       return {
@@ -405,12 +413,21 @@ server.tool(
 );
 
 async function main() {
+  logFile = await fs.open('/tmp/mcp-server-hume.log', 'a');
+  if (!process.env.HUME_API_KEY) {
+    log("Please set the HUME_API_KEY environment variable.");
+    process.exit(1);
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Hume MCP Server running on stdio");
+  log("Hume MCP Server running on stdio");
 }
 
+process.on('exit', async () => {
+  await logFile.close();
+})
+
 main().catch((error) => {
-  console.error("Fatal error in main():", error);
+  log("Fatal error in main():", error);
   process.exit(1);
 });
