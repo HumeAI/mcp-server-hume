@@ -1,15 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { HumeClient } from "hume"
+import { HumeClient } from "hume";
 import { z } from "zod";
 import { exec } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { PostedContextWithGenerationId, PostedTts, PostedUtterance } from 'hume/api/resources/tts';
-
-// Global map to store file paths by generationId
-export const audioMap = new Map<string, string[]>();
+import {
+  PostedContextWithGenerationId,
+  PostedTts,
+  PostedUtterance,
+} from "hume/api/resources/tts";
 
 // Create server instance
 const server = new McpServer({
@@ -17,10 +18,19 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-const hume = new HumeClient({
-  apiKey: process.env.HUME_API_KEY!
-})
+// Global map to store file paths by generationId
+export const audioMap = new Map<string, string[]>();
 
+let logFile: fs.FileHandle; 
+
+const log = (...args: any[]) => {
+  console.error(...args);
+  logFile?.write(JSON.stringify(args) + "\n");
+}
+
+const hume = new HumeClient({
+  apiKey: process.env.HUME_API_KEY!,
+});
 
 // Register TTS tool with expanded options
 server.tool(
@@ -35,13 +45,35 @@ b) Generating speech:
   If the user has text and has already created a voice, or has a generation to continue from, or desires to have text spoken with a novel voice, use the 'tts' tool to create audio files from the speech. For longer texts, typically break them up into shorter segments, and use continuation to tackle them piece by piece. If they like it (and if you have filesystem access) you should save the audio segment (copy it over from the temporary directory) into a more permanent location specified by the user.
   `,
   {
-    utterances: z.array(z.object({
-      text: z.string().describe("The input text to be synthesized into speech."),
-      description: z.string().optional().describe(`Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`),
-    })),
-    voiceName: z.string().optional().describe("The name of the voice from the voice library to use as the speaker for the text."),
-    continuationOf: z.string().optional().describe("The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first."),
-    quiet: z.boolean().default(false).describe("Whether to skip playing back the generated audio.")
+    utterances: z.array(
+      z.object({
+        text: z
+          .string()
+          .describe("The input text to be synthesized into speech."),
+        description: z
+          .string()
+          .optional()
+          .describe(
+            `Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`,
+          ),
+      }),
+    ),
+    voiceName: z
+      .string()
+      .optional()
+      .describe(
+        "The name of the voice from the voice library to use as the speaker for the text.",
+      ),
+    continuationOf: z
+      .string()
+      .optional()
+      .describe(
+        "The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first.",
+      ),
+    quiet: z
+      .boolean()
+      .default(false)
+      .describe("Whether to skip playing back the generated audio."),
   },
   async ({ continuationOf, voiceName, quiet, utterances: utterancesInput }) => {
     // Create the utterance with voice if specified
@@ -56,44 +88,53 @@ b) Generating speech:
           ...utterance,
           voice: {
             name: voiceName,
-          }
+          },
         };
       }
       utterances.push(utterance);
     }
 
-    const context: PostedContextWithGenerationId | null = continuationOf ? { generationId: continuationOf } : null;
+    const context: PostedContextWithGenerationId | null = continuationOf
+      ? { generationId: continuationOf }
+      : null;
 
     // Prepare the utterance with optional parameters
     const request: PostedTts = {
       utterances,
       ...(context ? { context } : {}), // conditionally add context
-    }
+    };
 
-    const text = utterances.map(u => u.text).join(" ")
-    console.error(`Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-    const createdAt = Date.now()
+    const text = utterances.map((u) => u.text).join(" ");
+    log(
+      `Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
+    );
+    const createdAt = Date.now();
 
     try {
       // Create temporary directory for audio files
-      const tempDir = path.join(os.tmpdir(), 'hume-tts');
+      const tempDir = path.join(os.tmpdir(), "hume-tts");
 
       // Ensure directory exists
       await fs.mkdir(tempDir, { recursive: true });
 
       const generationIds = new Set<string>();
 
-      let playback = Promise.resolve()
+      let playback = Promise.resolve();
 
-      const chunks = []
-      for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
-        chunks.push(audioChunk)
-        const generationIndex = chunks.filter(chunk => chunk.generationId === audioChunk.generationId).length - 1;
+      const chunks = [];
+      for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(
+        request,
+      )) {
+        chunks.push(audioChunk);
+        const generationIndex =
+          chunks.filter(
+            (chunk) => chunk.generationId === audioChunk.generationId,
+          ).length - 1;
         const { audio, generationId } = audioChunk;
 
         generationIds.add(generationId);
 
-        const audioData = Buffer.from(audio, 'base64');
+        const audioData = Buffer.from(audio, "base64");
 
         // Create a temporary file to store the audio
         const fileName = `${generationId}-chunk-${generationIndex}.wav`;
@@ -108,32 +149,39 @@ b) Generating speech:
 
         // Store the file path
         const generationChunks = audioMap.get(generationId);
-        generationChunks ? generationChunks?.push(tempFilePath) : audioMap.set(generationId, [tempFilePath]);
+        generationChunks
+          ? generationChunks?.push(tempFilePath)
+          : audioMap.set(generationId, [tempFilePath]);
 
-        console.error(`Stored audio chunk for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`);
+        log(
+          `Stored audio chunk for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`,
+        );
       }
-      await playback
+      await playback;
       return {
         content: [
           {
             type: "text",
-            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}", generation ids: ${[...generationIds].map(g => {
-              const filePath = audioMap.get(g);
-              return `${g} (file: ${filePath})`;
-            }).join(", ")}`,
+            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}", generation ids: ${[
+              ...generationIds,
+            ]
+              .map((g) => {
+                const filePath = audioMap.get(g);
+                return `${g} (file: ${filePath})`;
+              })
+              .join(", ")}`,
           },
         ],
-      }
-    }
-    catch (error) {
+      };
+    } catch (error) {
       return {
         content: [
           {
             type: "text",
             text: `Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`,
-          }
-        ]
-      }
+          },
+        ],
+      };
     }
   },
 );
@@ -143,17 +191,17 @@ const playAudio = async (filePath: string) => {
   await new Promise<void>((resolve, reject) => {
     exec(command, (error, _stdout, stderr) => {
       if (stderr) {
-        console.error(`ffplay stderr: ${stderr}`);
+        log(`ffplay stderr: ${stderr}`);
       }
       if (error) {
-        console.error(`Error playing audio: ${error.message}`);
+        log(`Error playing audio: ${error.message}`);
         return reject(error.message);
       }
       resolve();
     });
-  })
-}
-// Add the playback tool
+  });
+};
+
 server.tool(
   "play_audio",
   "Plays back audio by generationId using ffplay.",
@@ -175,11 +223,11 @@ server.tool(
     }
 
     // Check if the file exists
-    const filePath = filePaths[0]
+    const filePath = filePaths[0];
     try {
       await fs.access(filePath);
     } catch (error) {
-      console.error(`File not found: ${filePath}`);
+      log(`File not found: ${filePath}`);
       return {
         content: [
           {
@@ -193,12 +241,12 @@ server.tool(
     // Play the audio using ffplay
     const command = `ffplay -autoexit -nodisp "${filePath}"`;
 
-    console.error(`Executing command: ${command}`);
+    log(`Executing command: ${command}`);
 
-    const ret: { type: 'text', text: string }[] = [];
+    const ret: { type: "text"; text: string }[] = [];
     try {
       for (const filePath in filePaths) {
-        await playAudio(filePath)
+        await playAudio(filePath);
         ret.push({
           type: "text",
           text: `Played audio for generationId: ${generationId}, file: ${filePath}`,
@@ -207,12 +255,106 @@ server.tool(
       return { content: ret };
     } catch (e) {
       return {
-        content: [{
-          type: 'text',
-          text: (e as Error).message
-        }],
-        isError: true
-      }
+        content: [
+          {
+            type: "text",
+            text: (e as Error).message,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "list_voices",
+  "Lists available voices.",
+  {
+    provider: z
+      .enum(["HUME_AI", "CUSTOM_VOICE"])
+      .default("CUSTOM_VOICE")
+      .describe(
+        "Set this to HUME_AI to see the preset voices provided by Hume, instead of the custom voices in your account.",
+      ),
+    pageNumber: z
+      .number()
+      .optional()
+      .default(0)
+      .describe("The page number to retrieve."),
+    pageSize: z
+      .number()
+      .optional()
+      .default(100)
+      .describe("The number of voices to retrieve per page."),
+  },
+  async ({ provider, pageNumber, pageSize }) => {
+    try {
+      log(`Listing voices for provider: ${provider}`);
+      const voices = await hume.tts.voices.list({
+        provider,
+        pageNumber,
+        pageSize,
+      });
+      console.error(`Voices: ${JSON.stringify(voices, null, 2)}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`,
+          },
+        ],
+      };
+    } catch (error) {
+      log(
+        `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "delete_voice",
+  "Deletes a custom voice from your account's voice library",
+  {
+    name: z.string().describe("The name of the voice to delete."),
+  },
+  async ({ name }) => {
+    try {
+      log(`Deleting voice with name: ${name}`);
+      const response = await hume.tts.voices.delete({
+        name,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully deleted voice "${name}".`,
+          },
+        ],
+      };
+    } catch (error) {
+      log(
+        `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+        isError: true,
+      };
     }
   },
 );
@@ -222,12 +364,22 @@ server.tool(
   "save_voice",
   "Saves a generated voice to your Voice Library for reuse in future TTS requests.",
   {
-    generationId: z.string().describe("The generationId of the voice to save, obtained from a previous TTS request."),
-    name: z.string().describe("The name to assign to the saved voice. This name can be used in voiceName parameter in future TTS requests."),
+    generationId: z
+      .string()
+      .describe(
+        "The generationId of the voice to save, obtained from a previous TTS request.",
+      ),
+    name: z
+      .string()
+      .describe(
+        "The name to assign to the saved voice. This name can be used in voiceName parameter in future TTS requests.",
+      ),
   },
   async ({ generationId, name }) => {
     try {
-      console.error(`Saving voice with generationId: ${generationId} as name: "${name}"`);
+      log(
+        `Saving voice with generationId: ${generationId} as name: "${name}"`,
+      );
 
       // Call the Hume API to save the voice
       const response = await hume.tts.voices.create({
@@ -244,7 +396,9 @@ server.tool(
         ],
       };
     } catch (error) {
-      console.error(`Error saving voice: ${error instanceof Error ? error.message : String(error)}`);
+      log(
+        `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return {
         content: [
           {
@@ -252,19 +406,28 @@ server.tool(
             text: `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
-        isError: true
+        isError: true,
       };
     }
   },
 );
 
 async function main() {
+  logFile = await fs.open('/tmp/mcp-server-hume.log', 'a');
+  if (!process.env.HUME_API_KEY) {
+    log("Please set the HUME_API_KEY environment variable.");
+    process.exit(1);
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Hume MCP Server running on stdio");
+  log("Hume MCP Server running on stdio");
 }
 
+process.on('exit', async () => {
+  await logFile.close();
+})
+
 main().catch((error) => {
-  console.error("Fatal error in main():", error);
+  log("Fatal error in main():", error);
   process.exit(1);
 });
