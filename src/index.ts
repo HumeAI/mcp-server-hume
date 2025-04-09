@@ -18,6 +18,14 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
+
+const truncate = (str: string, maxLength: number) => {
+  if (str.length <= maxLength) {
+    return str;
+  }
+  return str.substring(0, maxLength) + "...";
+}
+
 // Global map to store file paths by generationId
 export const audioMap = new Map<string, string[]>();
 
@@ -63,6 +71,11 @@ b) Generating speech:
       .optional()
       .describe(
         "The name of the voice from the voice library to use as the speaker for the text.",
+      ),
+    provider: z
+      .enum(["HUME_AI", "CUSTOM_VOICE"])
+      .describe(
+        "Set this only when using `voiceName` to specify a voice provided by Hume.",
       ),
     continuationOf: z
       .string()
@@ -125,6 +138,11 @@ b) Generating speech:
       for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(
         request,
       )) {
+        log(`Received audio chunk: ${JSON.stringify(audioChunk, (k, v) => {
+          if (k === "audio") {
+            return "[Audio Data]";
+          }
+        })}`);
         chunks.push(audioChunk);
         const generationIndex =
           chunks.filter(
@@ -162,7 +180,7 @@ b) Generating speech:
         content: [
           {
             type: "text",
-            text: `Created audio for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}", generation ids: ${[
+            text: `Created audio for text: "${truncate(text, 50)}", generation ids: ${[
               ...generationIds,
             ]
               .map((g) => {
@@ -174,6 +192,9 @@ b) Generating speech:
         ],
       };
     } catch (error) {
+      log(
+        `Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return {
         content: [
           {
@@ -296,7 +317,7 @@ server.tool(
         pageNumber,
         pageSize,
       });
-      console.error(`Voices: ${JSON.stringify(voices, null, 2)}`);
+      log(`Voices: ${JSON.stringify(voices, null, 2)}`);
       return {
         content: [
           {
