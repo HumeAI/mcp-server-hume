@@ -1,0 +1,24 @@
+{
+  "filesystem": {
+    "command": "/usr/bin/env",
+    "args": [
+      "bash",
+      "-c",
+      "npx -y @modelcontextprotocol/server-filesystem /Users/twitchard/dev /Users/twitchard/creative /Users/twitchard/Documents/twitchard /tmp"
+    ],
+    "env": {
+      "PATH": "${PATH}"
+    }
+  },
+  "fetch": {
+    "command": "/usr/bin/env",
+    "args": [
+      "bash",
+      "-c",
+      "npx -y @anthropic-ai/mcp-server-fetch"
+    ],
+    "env": {
+      "PATH": "${PATH}"
+    }
+  }
+}
