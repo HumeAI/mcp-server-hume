@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && chmod 755 build/index.js"
+    "build": "tsc && chmod 755 build/index.js",
+    "evals:grab": "bun src/evals/grab.ts typescript > src/evals/server_defs.json"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +18,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
-    "typescript": "^5.8.2",
+    "typescript": "5.5",
     "@types/bun": "latest"
   },
   "private": true

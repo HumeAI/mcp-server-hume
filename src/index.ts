@@ -11,42 +11,7 @@ import {
   PostedTts,
   PostedUtterance,
 } from "hume/api/resources/tts";
-import { Tool } from "@anthropic-ai/sdk/resources/index.mjs";
-
-// Export function to create and configure the server
-export function createHumeServer() {
-  // Create server instance
-  const server = new McpServer({
-    name: "hume",
-    version: "1.0.0",
-  });
-  
-  // Configure all tools
-  configureHumeTools(server);
-  
-  return server;
-}
-
-// Export function to get tool definitions without creating a full server
-export const getHumeToolDefinitions = async () => {
-  // Create a temporary server to extract tool definitions
-  const server = new McpServer({
-    name: "hume-tools",
-    version: "1.0.0",
-  });
-  
-  // Configure all tools
-  configureHumeTools(server);
-  
-  // Return tool definitions - access tools directly from server
-  const ret = await (server.server as any)._requestHandlers.get("tools/list")({method: "tools/list"})
-  return ret as {
-    tools: Array<Tool>
-  }
-}
-
-// Create server instance for the main app
-const server = createHumeServer();
+import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 
 
 const truncate = (str: string, maxLength: number) => {
@@ -59,7 +24,7 @@ const truncate = (str: string, maxLength: number) => {
 // Global map to store file paths by generationId
 export const audioMap = new Map<string, string[]>();
 
-let logFile: fs.FileHandle; 
+let logFile: fs.FileHandle;
 
 const log = (...args: any[]) => {
   console.error(...args);
@@ -70,8 +35,62 @@ const hume = new HumeClient({
   apiKey: process.env.HUME_API_KEY!,
 });
 
-// Function to configure all Hume tools on a server
-export function configureHumeTools(server: McpServer) {
+const ttsArgs = {
+  utterances: z.array(
+    z.object({
+      text: z
+        .string()
+        .describe("The input text to be synthesized into speech."),
+      description: z
+        .string()
+        .optional()
+        .describe(
+          `Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`,
+        ),
+    }),
+  ),
+  voiceName: z
+    .string()
+    .optional()
+    .describe(
+      "The name of the voice from the voice library to use as the speaker for the text.",
+    ),
+  provider: z
+    .enum(["HUME_AI", "CUSTOM_VOICE"])
+    .optional()
+    .describe(
+      "Set this only when using `voiceName` to specify a voice provided by Hume.",
+    ),
+  continuationOf: z
+    .string()
+    .optional()
+    .describe(
+      "The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first.",
+    ),
+  quiet: z
+    .boolean()
+    .default(false)
+    .describe("Whether to skip playing back the generated audio."),
+}
+
+export const TTSSchema = z.object(ttsArgs)
+export type TTSCall = z.infer<typeof TTSSchema>;
+
+export const ttsSuccess = (generationIds: Array<string>, text: string): CallToolResult => ({
+  content: [
+    {
+      type: "text",
+      text: `Created audio for text: "${truncate(text, 50)}", generation ids: ${generationIds
+        .map((g) => {
+          const filePath = audioMap.get(g);
+          return `${g} (file: ${filePath})`;
+        })
+        .join(", ")}`,
+    },
+  ],
+})
+
+export const setup = (server: McpServer) => {
   // Register TTS tool with expanded options
   server.tool(
     "tts",
@@ -84,42 +103,7 @@ a) Character design:
 b) Generating speech:
   If the user has text and has already created a voice, or has a generation to continue from, or desires to have text spoken with a novel voice, use the 'tts' tool to create audio files from the speech. For longer texts, typically break them up into shorter segments, and use continuation to tackle them piece by piece. If they like it (and if you have filesystem access) you should save the audio segment (copy it over from the temporary directory) into a more permanent location specified by the user.
   `,
-    {
-      utterances: z.array(
-        z.object({
-          text: z
-            .string()
-            .describe("The input text to be synthesized into speech."),
-          description: z
-            .string()
-            .optional()
-            .describe(
-              `Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.`,
-            ),
-        }),
-      ),
-      voiceName: z
-        .string()
-        .optional()
-        .describe(
-          "The name of the voice from the voice library to use as the speaker for the text.",
-        ),
-      provider: z
-        .enum(["HUME_AI", "CUSTOM_VOICE"])
-        .describe(
-          "Set this only when using `voiceName` to specify a voice provided by Hume.",
-        ),
-      continuationOf: z
-        .string()
-        .optional()
-        .describe(
-          "The generationId of a prior TTS generation to use as context for generating consistent speech style and prosody across multiple requests. If the user is trying to synthesize a long text, you should encourage them to break it up into smaller chunks, and always specify continuationOf for each chunk after the first.",
-        ),
-      quiet: z
-        .boolean()
-        .default(false)
-        .describe("Whether to skip playing back the generated audio."),
-    },
+    ttsArgs,
     async ({ continuationOf, voiceName, quiet, utterances: utterancesInput }) => {
       // Create the utterance with voice if specified
       const utterances: Array<PostedUtterance> = [];
@@ -208,21 +192,7 @@ b) Generating speech:
           );
         }
         await playback;
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Created audio for text: "${truncate(text, 50)}", generation ids: ${[
-                ...generationIds,
-              ]
-                .map((g) => {
-                  const filePath = audioMap.get(g);
-                  return `${g} (file: ${filePath})`;
-                })
-                .join(", ")}`,
-            },
-          ],
-        };
+        return ttsSuccess([...generationIds], text);
       } catch (error) {
         log(
           `Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`,
@@ -240,7 +210,7 @@ b) Generating speech:
   );
 
   server.tool(
-    "play_audio",
+    "play_previous_audio",
     "Plays back audio by generationId using ffplay.",
     {
       generationId: z.string().describe("The generationId of the audio to play"),
@@ -448,7 +418,7 @@ b) Generating speech:
       }
     },
   );
-  
+
   return server;
 }
 
@@ -468,7 +438,10 @@ const playAudio = async (filePath: string) => {
   });
 };
 
-async function main() {
+const main = async () => {
+  // Create server instance for the main app
+  const server = createHumeServer();
+
   logFile = await fs.open('/tmp/mcp-server-hume.log', 'a');
   if (!process.env.HUME_API_KEY) {
     log("Please set the HUME_API_KEY environment variable.");
@@ -482,6 +455,34 @@ async function main() {
 process.on('exit', async () => {
   await logFile.close();
 })
+
+
+// Export function to create and configure the server
+export const createHumeServer = () => {
+  // Create server instance
+  const server = new McpServer({
+    name: "hume",
+    version: "1.0.0",
+  });
+
+  // Configure all tools
+  setup(server);
+
+  return server;
+}
+
+// Export function to get tool definitions without creating a full server
+export const getHumeToolDefinitions = async () => {
+  // Create a temporary server to extract tool definitions
+  const server = new McpServer({
+    name: "hume-tools",
+    version: "1.0.0",
+  });
+
+  setup(server);
+
+  return (await (server.server as any)._requestHandlers.get("tools/list")({ method: "tools/list" })).tools as Array<Tool>
+}
 
 main().catch((error) => {
   log("Fatal error in main():", error);
