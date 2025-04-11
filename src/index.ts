@@ -11,7 +11,7 @@ import {
   PostedTts,
   PostedUtterance,
 } from "hume/api/resources/tts";
-import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 
 const truncate = (str: string, maxLength: number) => {
@@ -34,6 +34,7 @@ const log = (...args: any[]) => {
 const hume = new HumeClient({
   apiKey: process.env.HUME_API_KEY!,
 });
+
 
 const ttsArgs = {
   utterances: z.array(
@@ -154,7 +155,7 @@ b) Generating speech:
         for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(
           request,
         )) {
-          log(`Received audio chunk: ${JSON.stringify(audioChunk, (k, v) => {
+          log(`Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => {
             if (k === "audio") {
               return "[Audio Data]";
             }
@@ -472,7 +473,7 @@ export const createHumeServer = () => {
 }
 
 // Export function to get tool definitions without creating a full server
-export const getHumeToolDefinitions = async () => {
+export const getHumeToolDefinitions = async (): Promise<Array<Tool>> => {
   // Create a temporary server to extract tool definitions
   const server = new McpServer({
     name: "hume-tools",

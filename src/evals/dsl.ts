@@ -1,9 +1,10 @@
 import { ContentBlock, MessageParam, TextBlockParam } from "@anthropic-ai/sdk/resources/index.mjs"
-import { getHumeToolDefinitions, TTSCall, ttsSuccess } from "..";
+import { getHumeToolDefinitions, TTSCall, ttsSuccess } from "../index.js";
 import Anthropic from "@anthropic-ai/sdk";
 import type { Tool as McpTool } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/messages";
 import serverDefs from "./server_defs.js";
+import { z } from "zod";
 
 const logDebug = (...args: any[]): void => {
   console.error(...args);
@@ -24,7 +25,7 @@ const cached = <T>(get: () => Promise<T>): (() => Promise<T>) => {
 const loadHumeTools = async (): Promise<McpTool[]> => {
   const toolList = await (cached(getHumeToolDefinitions)());
 
-  const ret = toolList.map((tool: McpTool) => ({
+  const ret = toolList.map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
@@ -72,77 +73,179 @@ type EvalFailure = {
   actual: ContentBlock[];
 }
 
-export const session = (sessionName: string, { tools, model }: { tools: AvailableServer[], model: string }) => {
-  const transcript: MessageParam[] = []
-  let toolUseCounter = 0;
-  const results: EvalResult[] = []
-  let lastResponse: ContentBlock[] = []
-
-  return {
-    userSays: (message: string) => {
-      transcript.push({
-        role: "user",
-        content: message,
-      });
-    },
-    toolUse: (toolName: string, input: unknown) => {
-      transcript.push({
-        role: "assistant",
-        content: [{
-          type: "tool_use",
-          name: toolName,
-          id: `${toolUseCounter++}`,
-          input,
-        }]
-      });
-      return {
-        result: (resultContent: { content: string | Array<TextBlockParam>}) => {
-          transcript.push({
-            role: "user",
-            content: [{
-              type: "tool_result",
-              tool_use_id: `${toolUseCounter - 1}`,
-              content: resultContent.content,
-            }]
-          });
-        }
-      }
-    },
-    response: async (): Promise<ContentBlock[]> => {
-      const anthropicResponse = await anthropic.messages.create({
-        model: model,
-        max_tokens: 2000,
-        messages: transcript,
-        tools: (await getAllTools(tools)).map(toAnthropicTool),
-      });
-      lastResponse = anthropicResponse.content;
-      return anthropicResponse.content;
-    },
-    evaluate: (description: string, f: () => void) => {
+export const or = (...fs: (() => void)[]): () => void => {
+  const errors: Error[] = [];
+  return () => {
+    for (const f of fs) {
       try {
         f();
-        results.push({
-          sessionName,
-          scenarioName: description,
-          status: 'success',
-        });
+        return;
       } catch (error) {
-        logDebug(error)
-        results.push({
-          sessionName,
-          scenarioName: description,
-          status: 'failure',
-          message: (error as any)?.message,
-          actual: lastResponse,
+        errors.push(error as Error);
+      }
+    }
+    throw new Error(`All functions failed: ${errors.map(e => e.message).join(", ")}`);
+  };
+}
+
+export class Session {
+  private transcript: MessageParam[] = [];
+  private toolUseCounter = 0;
+  private results: EvalResult[] = [];
+  private lastResponse: ContentBlock[] = [];
+  private sessionName: string;
+  private tools: AvailableServer[];
+  private model: string;
+
+
+  constructor(sessionName: string, { tools, model }: { tools: AvailableServer[], model: string }) {
+    this.sessionName = sessionName;
+    this.tools = tools;
+    this.model = model;
+  }
+
+  userSays(message: string): void {
+    this.transcript.push({
+      role: "user",
+      content: message,
+    });
+  }
+
+  assistantSays(message: string): void {
+    this.transcript.push({
+      role: "assistant",
+      content: message,
+    });
+  }
+
+  toolUse(toolName: string, input: unknown) {
+    this.transcript.push({
+      role: "assistant",
+      content: [{
+        type: "tool_use",
+        name: toolName,
+        id: `${this.toolUseCounter++}`,
+        input,
+      }]
+    });
+    return {
+      result: (resultContent: { content: string | Array<TextBlockParam> }) => {
+        this.transcript.push({
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: `${this.toolUseCounter - 1}`,
+            content: resultContent.content,
+          }]
         });
       }
-    },
-    ttsCall (input: TTSCall, output: {generationIds: Array<string>}) {
-      return this.toolUse("tts", input).result(ttsSuccess(output.generationIds, input.utterances.map(u => u.text).join(" ")));
-    },
-    result: (): Array<EvalResult> => {
-      return results
     }
   }
+
+  async judgeLastResponseYesOrNo(question: string) {
+    const lastResponse = this.lastResponse;
+    if (lastResponse.length === 0) {
+      throw new Error("No response to judge");
+    }
+
+    const yesOrNoTool = {
+        name: "yes_or_no",
+        description: "Answer yes or no to the question",
+        input_schema: {
+          type: "object",
+          properties: {
+            answer: z.boolean(),
+            explanation: z.string().optional().describe("If no, explain why"),
+          }
+        }
+      }
+    const anthropicResponse = await anthropic.messages.create({
+      model: this.model,
+      max_tokens: 2000,
+      messages: [{
+        role: "user",
+        content: [{
+          type: "text",
+          text: `Answer the following question about the JSON chat transcript. Use the yes_or_no tool only. No textual response is needed.
+            <question>${question}</question>\n<transcript>\n${JSON.stringify(lastResponse, null, 2)}\n</transcript>`,
+        }]
+      }],
+      tools: [yesOrNoTool as AnthropicTool],
+      tool_choice: { type: "tool", "name": "yes_or_no" }
+    });
+
+    const toolCall = anthropicResponse.content.find((b) => b.type === "tool_use");
+    if (!toolCall) throw new Error("Judge error: judgeLastResponse response did not contain tool use");
+    const input = z.object(yesOrNoTool.input_schema.properties).parse(toolCall.input);
+    if (!input.answer) {
+      if (!input.explanation) {
+        throw new Error("Judge error: failed with no explanation");
+      }
+      throw new Error(`${input.explanation}`);
+    }
+  }
+
+  async response(): Promise<ContentBlock[]> {
+    const anthropicResponse = await anthropic.messages.create({
+      model: this.model,
+      max_tokens: 2000,
+      messages: this.transcript,
+      tools: (await getAllTools(this.tools)).map(toAnthropicTool),
+    });
+    this.lastResponse = anthropicResponse.content;
+    return anthropicResponse.content;
+  }
+
+  evaluate(description: string, f: () => void): void {
+    try {
+      f();
+      this.results.push({
+        sessionName: this.sessionName,
+        scenarioName: description,
+        status: 'success',
+      });
+    } catch (error) {
+      logDebug(error)
+      this.results.push({
+        sessionName: this.sessionName,
+        scenarioName: description,
+        status: 'failure',
+        message: (error as any)?.message,
+        actual: this.lastResponse,
+      });
+    }
+  }
+
+  ttsCall(input: TTSCall, output: { generationIds: Array<string> }) {
+    return this.toolUse("tts", input).result(ttsSuccess(output.generationIds, input.utterances.map(u => u.text).join(" ")));
+  }
+
+  result(): Array<EvalResult> {
+    return this.results;
+  }
+
+  async fork(forkName: string, callback: (session: Session) => Promise<void>): Promise<Session> {
+    // Create a forked session with a new name
+    const forkedSession = new Session(`${this.sessionName}:${forkName}`, {
+      tools: this.tools,
+      model: this.model
+    });
+
+    // Copy the transcript from the current session
+    forkedSession.transcript = [...this.transcript];
+    forkedSession.toolUseCounter = this.toolUseCounter;
+
+    // Execute the callback with the forked session
+    await callback(forkedSession);
+
+    // Combine results from the forked session into the original
+    this.results.push(...forkedSession.results);
+
+    return forkedSession;
+  }
+}
+
+export const session = (sessionName: string, options: { tools: AvailableServer[], model: string }): Session => {
+  return new Session(sessionName, options);
 }
 

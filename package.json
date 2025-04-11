@@ -2,6 +2,7 @@
   "name": "mcp-server-hume",
   "version": "1.0.0",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "build": "tsc && chmod 755 build/index.js",
     "evals:grab": "bun src/evals/grab.ts typescript > src/evals/server_defs.json",
@@ -15,6 +16,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@modelcontextprotocol/sdk": "^1.8.0",
+    "@types/chai": "^5.2.1",
+    "chai": "^5.2.0",
     "hume": "^0.10.0",
     "zod": "^3.24.2"
   },
