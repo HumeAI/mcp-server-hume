@@ -76,10 +76,10 @@ const ttsArgs = {
 export const TTSSchema = z.object(ttsArgs)
 export type TTSCall = z.infer<typeof TTSSchema>;
 
-export const ttsSuccess = (generationIds: Array<string>, text: string): CallToolResult => ({
+export const ttsSuccess = (generationIds: Array<string>, text: string) => ({
   content: [
     {
-      type: "text",
+      type: "text" as const,
       text: `Created audio for text: "${truncate(text, 50)}", generation ids: ${generationIds
         .map((g) => {
           const filePath = audioMap.get(g);

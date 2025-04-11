@@ -101,4 +101,8 @@ export default ${output} as Record<string, Tool[]>;
   process.exit(0)
 }
 
-await main();
+// Run the main function with proper error handling
+main().catch(error => {
+  console.error('Fatal error in main():', error);
+  process.exit(1);
+});
