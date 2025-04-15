@@ -1,4 +1,4 @@
-import {Scenario, Roleplay, ScenarioTool} from './roleplay.js';
+import {Scenario, Roleplay, ScenarioTool, TranscriptEntry} from './roleplay.js';
 import * as fs from 'fs/promises';
 import { getHumeToolDefinitions } from '../index.js';
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -31,40 +31,13 @@ const getHumeMcpTools = async (): Promise<Record<string, ScenarioTool>> => {
   return scenarioTools;
 };
 
-// Lazy-loaded singleton for humeMcpTools
-let _humeMcpTools: Record<string, ScenarioTool> | null = null;
-const humeMcpTools: Record<string, ScenarioTool> = new Proxy({}, {
-  get: (_target, prop: string) => {
-    if (!_humeMcpTools) {
-      throw new Error('humeMcpTools accessed before initialization');
-    }
-    return _humeMcpTools[prop];
-  },
-  ownKeys: () => {
-    if (!_humeMcpTools) {
-      throw new Error('humeMcpTools accessed before initialization');
-    }
-    return Reflect.ownKeys(_humeMcpTools);
-  },
-  getOwnPropertyDescriptor: (_target, prop: string) => {
-    if (!_humeMcpTools) {
-      throw new Error('humeMcpTools accessed before initialization');
-    }
-    return Reflect.getOwnPropertyDescriptor(_humeMcpTools, prop);
-  }
-});
-
-// Initialize humeMcpTools
-const initializeHumeMcpTools = async () => {
-  _humeMcpTools = await getHumeMcpTools();
-};
 
 // This tool is a stand-in for tools like 'fetch' and 'filesystem'. You initialize it with some content (split up into named sections) and then it returns content that you request by name
-const getContent = (content: Record<string, string>): ScenarioTool => {
+const getContent = (description: string, content: Record<string, string>): ScenarioTool => {
   const sections = Object.keys(content);
   
   return {
-    description: 'Get content from different named sections',
+    description,
     inputSchema: {
       type: 'object',
       properties: {
@@ -100,28 +73,59 @@ const getContent = (content: Record<string, string>): ScenarioTool => {
   };
 };
 
+const prettyTranscriptEntry = (entry: TranscriptEntry) => {
+  switch (entry.type) {
+    case 'spoke':
+      return `${entry.speaker}: ${entry.content}`;
+    case 'tool_use':
+      return `Tool use (${entry.name} ${JSON.stringify(entry.input)}`;
+    case 'tool_result':
+      return `Tool response (${entry.name} ${JSON.stringify(entry.content)})`;
+  }
+}
+
 const main = async () => {
-  // Initialize the MCP tools
-  await initializeHumeMcpTools();
-  
   const humeBlogParagraphs = (await fs.readFile(__dirname + '/data/hume_blog.txt', 'utf-8')).split('\n\n')
   const scenario: Scenario = {
     name: "Screenreader",
     tools: {
-      ...humeMcpTools,
-      'get_content': getContent({
+      ...(await getHumeMcpTools()),
+      'get_content': getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
         'firstParagraph': humeBlogParagraphs[0],
         'secondParagraph': humeBlogParagraphs[1],
+        'thirdParagraph': humeBlogParagraphs[2],
         'lastParagraph': humeBlogParagraphs[humeBlogParagraphs.length - 1],
       })
     },
     initialMessage: "yo, can you read me the blog post at https://www.hume.ai/blog/introducing-octave",
-    roleplayerPrompt: "You are a user who wants to hear a blog post read out loud to them. You only have one hand free (you are carrying a baby in the other hand and trying to do chores) so you are not a fast typer, and abbreviate and provide only the barest directions."
+    roleplayerPrompt: `You are roleplaying a user conversing with an AI agent. Your goal is to hear a blog post read out loud to you. You are lazy. You use abbreviations and provide only the barest outline of instructions, expecting your agent to use reasoning to determine your meaning.
+
+    You have access to a single tool 'end_roleplay'. Inside the transcript, you will see records of tool calls
+    to a 'tts' tool. You CANNOT use the 'tts' tool yourself, but when you see that the agent has called the tts tool, you should consider the text to have been read out loud to you. You should NOT consider the text to have been read out loud to you unless there has been an appropriate call to the tts tool.
+    `
   }
 
   const maxTurns = 20
-  const {result, transcript} = await Roleplay.run(scenario, process.env.ANTHROPIC_API_KEY!, maxTurns, 'claude-3-5-haiku-latest')
-  console.log(JSON.stringify({result, transcript}, null, 2))
+  console.error("Running scenario with maxTurns:", maxTurns)
+  
+  const roleplay = new Roleplay(process.env.ANTHROPIC_API_KEY!, scenario, 'claude-3-5-haiku-latest')
+  const transcript = []
+  
+  // Iterate through transcript entries as they come in
+  for await (const entry of roleplay) {
+    transcript.push(entry)
+    
+    console.log(prettyTranscriptEntry(entry))
+    
+    // Break after maxTurns
+    if (transcript.length >= maxTurns) {
+      break
+    }
+  }
+  
+  const result = roleplay.getResult()
+  console.log(JSON.stringify({result}, null, 2))
+  process.exit(0)
 }
 
 await main()

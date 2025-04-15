@@ -4,7 +4,9 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/index.mjs";
 
 const debugLog = (...args: any[]): void => {
-  console.error(...args);
+  if (process.env.DEBUG) {
+    console.error(...args);
+  }
 }
 export type Assistant =
   // "Agent" is the assistant with the MCP tool that we are evaluating the prompts for
@@ -37,7 +39,7 @@ const turn = (lastTranscriptEntry: TranscriptEntry): Assistant => {
     throw new Error('Unexpected: tool_use entry should never be last in transcript')
   }
   if (lastTranscriptEntry.type === 'tool_result') {
-    return 'roleplayer'
+    return 'agent'
   }
   if (lastTranscriptEntry.type === 'spoke') {
     switch (lastTranscriptEntry.speaker) {
@@ -104,16 +106,15 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
     }];
   }
 
-  public static async run(scenario: Scenario, apiKey: string, maxTurns: number = 10, model = "claude-3-5-haiku-latest") {
-    const roleplay = new Roleplay(apiKey, scenario, model);
+  public async run(maxTurns: number = 10): Promise<TranscriptEntry[]> {
     const transcript: TranscriptEntry[] = [];
-    for await (const entry of roleplay) {
+    for await (const entry of this) {
       transcript.push(entry);
       if (transcript.length >= maxTurns) {
         break;
       }
     }
-    return { transcript, result: roleplay.getResult() };
+    return transcript;
   }
 
   end(status: 'success' | 'failure', reason: string) {
@@ -191,7 +192,7 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
             return { role: 'user', content: [{ type: "tool_result", content: entry.content, tool_use_id: entry.tool_use_id }] }
           }
           if (entry.type === 'tool_use') {
-            return { role: 'assistant', content: [{ type: "tool_result", content: entry.input, tool_use_id: entry.id }] }
+            return { role: 'assistant', content: [{ type: "tool_use", name: entry.name, input: entry.input, id: entry.id }] }
           }
           return exhaustive(entry)
         })
@@ -200,7 +201,9 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
     }
   }
 
-  async handleToolUse(block: ToolUseBlock): Promise<TranscriptEntry> {
+  async handleToolUse(block: ToolUseBlock): Promise<[TranscriptEntry, TranscriptEntry]> {
+    debugLog(`Tool use detected: ${block.name} with id ${block.id}`);
+
     const tool = this.scenario.tools[block.name];
     if (!tool) {
       throw new Error(`Tool ${block.name} not found in scenario`);
@@ -208,17 +211,35 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
     const input = block.input;
     const id = block.id;
 
-    const result = await tool.handler(input)
+    debugLog(`Tool use: name=${block.name}, id=${id}, input=${JSON.stringify(input)}`);
 
-    return {
+    // Create the tool use entry
+    const toolUse: TranscriptEntry = {
+      type: 'tool_use',
+      name: block.name,
+      id,
+      input
+    };
+
+    // Get result from tool handler
+    const result = await tool.handler(input);
+
+    // Create the tool result entry
+    const toolResult: TranscriptEntry = {
       type: 'tool_result',
       name: block.name,
       content: result,
       tool_use_id: id
     };
+
+    debugLog(`Tool result created: tool_use_id=${id}, name=${block.name}`);
+
+    // Return both entries
+    return [toolUse, toolResult];
   }
 
   async handleResponse(assistant: Assistant, response: Message): Promise<TranscriptEntry[]> {
+    console.log('length: ', response.content.length, 'content types', response.content.map((c) => c.type));
     const ret: TranscriptEntry[] = []
     for (const block of response.content) {
       if (block.type === 'text') {
@@ -231,7 +252,10 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
       }
       if (block.type === 'tool_use') {
         if (assistant === 'agent') {
-          ret.push(await this.handleToolUse(block));
+          // Now handleToolUse returns both tool use and tool result entries
+          const [toolUse, toolResult] = await this.handleToolUse(block);
+          ret.push(toolUse);
+          ret.push(toolResult);
           continue
         }
         if (assistant === 'roleplayer') {
@@ -264,7 +288,7 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
         max_tokens: 1000,
       });
       return this.handleResponse('roleplayer', response)
-    } catch (e) {
+    } catch (e: any) {
       debugLog(JSON.stringify(Roleplay.translateTranscript('roleplayer', this.transcript)))
       throw e
     }
@@ -272,15 +296,26 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
 
   async handleAgentTurn(): Promise<TranscriptEntry[]> {
     try {
+      // Log the raw transcript before conversion
+      debugLog("Raw transcript before API call:", JSON.stringify(this.transcript, null, 2));
+
+      // Get converted messages for API
+      const messages = Roleplay.translateTranscript('agent', this.transcript);
+      debugLog("Messages for API:", JSON.stringify(messages, null, 2));
+
+      // Perform the API call
       const response = await this.anthropic.messages.create({
         model: this.model,
-        messages: Roleplay.translateTranscript('agent', this.transcript),
+        messages: messages,
         tools: this.getAnthropicTools(),
         max_tokens: 1000,
       });
+
       return this.handleResponse('agent', response)
-    } catch (e) {
-      debugLog(JSON.stringify(Roleplay.translateTranscript('agent', this.transcript)))
+    } catch (e: any) {
+      console.error("Error in handleAgentTurn:", e.message);
+      debugLog("Full transcript at time of error:", JSON.stringify(this.transcript, null, 2));
+      debugLog("API messages that caused error:", JSON.stringify(Roleplay.translateTranscript('agent', this.transcript), null, 2));
       throw e
     }
   }

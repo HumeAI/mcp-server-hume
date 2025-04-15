@@ -6,8 +6,7 @@
   "scripts": {
     "build": "tsc && chmod 755 build/index.js",
     "evals:grab": "bun src/evals/grab.ts typescript > src/evals/server_defs.json",
-    "evals": "bun src/evals/evals.ts",
-    "evals:dsl": "bun src/evals/run_dsl.ts"
+    "evals": "bun src/evals/evals.ts"
   },
   "keywords": [],
   "author": "",
