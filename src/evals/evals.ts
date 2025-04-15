@@ -3,6 +3,7 @@ import * as fs from 'fs/promises';
 import { getHumeToolDefinitions } from '../index.js';
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
+import { scoreCriteria } from './scorer.js';
 
 // Convert MCP tools to ScenarioTools
 const convertToolToScenarioTool = (tool: Tool): ScenarioTool => {
@@ -91,9 +92,8 @@ const main = async () => {
     tools: {
       ...(await getHumeMcpTools()),
       'get_content': getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
-        'firstParagraph': humeBlogParagraphs[0],
-        'secondParagraph': humeBlogParagraphs[1],
-        'thirdParagraph': humeBlogParagraphs[2],
+        'firstContent': humeBlogParagraphs[0] + '\n\n' + humeBlogParagraphs[1],
+        'secondContent': humeBlogParagraphs[2] + '\n\n' + humeBlogParagraphs[3] + humeBlogParagraphs[4] + '\n\n' + humeBlogParagraphs[5],
         'lastParagraph': humeBlogParagraphs[humeBlogParagraphs.length - 1],
       })
     },
@@ -103,6 +103,16 @@ const main = async () => {
     You have access to a single tool 'end_roleplay'. Inside the transcript, you will see records of tool calls
     to a 'tts' tool. You CANNOT use the 'tts' tool yourself, but when you see that the agent has called the tts tool, you should consider the text to have been read out loud to you. You should NOT consider the text to have been read out loud to you unless there has been an appropriate call to the tts tool.
     `
+  }
+
+  const criteria = {
+    "tts_used": "The agent should use the tts tool to play back the content.",
+    "avoid_unnecessary_confirmation": "The agent should not ask for confirmation to do something the user has already asked for.",
+    "avoid_repeated_playback": "The agent should not play the same content multiple times, unless requested. For example, the agent should not unnecessarily call the `play_previous_audio` tool after calling the `tts` call.",
+    "incremental_retrieval": "The agent should incrementally retrieve the blog post and play it back in chunks, rather than trying to retrieve the entire post at once.",
+    "incremental_playback": "Each utterance passed to the tts tool should be no longer than a single paragraph. Each call to the tts tool should be no longer than three paragraphs.",
+    "verbosity": "The agent should be concise and avoid unnecessary verbosity.",
+    "continuation_used_properly": "The agent should specify the continuationOf when calling the tts tool in all calls except for the initial one, unless the user has requested a restart or a different voice."
   }
 
   const maxTurns = 20
@@ -124,7 +134,20 @@ const main = async () => {
   }
   
   const result = roleplay.getResult()
-  console.log(JSON.stringify({result}, null, 2))
+  
+  // Score the criteria
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error("ANTHROPIC_API_KEY is required for scoring")
+    process.exit(1)
+  }
+  
+  const scores = await scoreCriteria(
+    process.env.ANTHROPIC_API_KEY,
+    criteria,
+    { transcript, result }
+  )
+  
+  console.log(JSON.stringify({ result, scores }, null, 2))
   process.exit(0)
 }
 
