@@ -1,10 +1,11 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { DESCRIPTIONS, TTSSchema, ttsSuccess } from '../index.js';
+import { DESCRIPTIONS, handlePlayPreviousAudio, TTSSchema, ttsSuccess } from '../index.js';
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
 import { ScenarioTool } from './roleplay.js';
 import { getHumeMcpTools } from './utils.js';
 import { uuid } from 'uuid';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 // Common prompt instructions
 const beTerse = "Use abbreviations, express your intent in as few information-dense sentences as possible, as if you were typing on a phone.";
@@ -45,23 +46,28 @@ const voiceDesignCriteria = {
   voice_design_well_done: `When crafting voice descriptions, or presenting the user with voice options, or guiding the user through the process of voice design, the agent should abide by the following directions:\n\n ${await fs.readFile(path.join(__dirname, '/data/voice_design.txt'), 'utf-8')}`,
 }
 
-const handler = async (toolName: string, input: unknown): Promise<ToolResultBlockParam['content']> => {
+const handler = async (toolName: string, input: unknown): Promise<CallToolResult> => {
   const text = TTSSchema(DESCRIPTIONS).parse(input).utterances.map((u) => u.text).join(' ');
   if (toolName === 'tts') {
-    return ttsSuccess(uuid.v4(), text).content;
+    return ttsSuccess(uuid.v4(), text);
+  }
+  if (toolName === 'play_previous_audio') {
+    return (await handlePlayPreviousAudio(input as any));
   }
   if (toolName === 'list_voices') {
-    return [{
-      type: 'text',
-      text: `Available voices: ${JSON.stringify(input)}`
-    }];
+    return {
+      content: [{ type: 'text', text: `Available voices: ${JSON.stringify(input)}` }]
+    };
   }
   if (toolName === 'save_voice') {
-    return [{
-      type: 'text',
-      text: `Voice saved with name: ${JSON.stringify(input)}`
-    }];
+    return {
+      content: [{
+        type: 'text',
+        text: `Voice saved with name: ${JSON.stringify(input)}`
+      }]
+    };
   }
+  throw new Error(`Unknown tool name: ${toolName}`);
 }
 const mockDisplayUse = (input: unknown): string => `<AGENT REQUESTED CONTENT ${JSON.stringify(input)}>`
 const mockDisplayResult = (_input: unknown): string => `<AGENT RECEIVED CONTENT>`;
@@ -122,7 +128,7 @@ export const screenreaderScenario = async (descriptions: typeof DESCRIPTIONS): P
     roleplay: {
       name: "Simple Screenreader",
       tools: {
-        ...(await getHumeMcpTools({descriptions})),
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
         get_content: getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
           'firstContent': blogParagraphs[0] + '\n\n' + blogParagraphs[1],
           'secondContent': blogParagraphs[2] + '\n\n' + blogParagraphs[3] + blogParagraphs[4] + '\n\n' + blogParagraphs[5],
@@ -151,7 +157,7 @@ export const pickyScreenreaderScenario = async (descriptions: typeof DESCRIPTION
     roleplay: {
       name: "Picky Screenreader",
       tools: {
-        ...(await getHumeMcpTools({descriptions})),
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
         get_content: getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
           'firstContent': postParagraphs[0] + '\n\n' + postParagraphs[1],
           'secondContent': postParagraphs[2] + '\n\n' + postParagraphs[3] + postParagraphs[4] + '\n\n' + postParagraphs[5],
@@ -189,7 +195,7 @@ export const habitualScreenreaderScenario = async (descriptions: typeof DESCRIPT
     roleplay: {
       name: "Habitual Screenreader",
       tools: {
-        ...(await getHumeMcpTools({descriptions})),
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
         get_content: getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
           'firstContent': blogParagraphs[0] + '\n\n' + blogParagraphs[1],
           'secondContent': blogParagraphs[2] + '\n\n' + blogParagraphs[3] + blogParagraphs[4] + '\n\n' + blogParagraphs[5],
@@ -225,7 +231,7 @@ export const voiceDesignerScenario = async (descriptions: typeof DESCRIPTIONS): 
     roleplay: {
       name: "Voice Designer",
       tools: {
-        ...(await getHumeMcpTools({descriptions}))
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
       },
       initialMessage: "Hey! I'm designing a character for my video game - she's a tough space mercenary with a mysterious past. Can you help me create a perfect voice for her?",
       roleplayerPrompt: `You are roleplaying a user who wants to design a voice for a video game character they're creating. You want to find the perfect voice that matches the character's personality and background.
@@ -261,7 +267,7 @@ export const voiceExplorerScenario = async (descriptions: typeof DESCRIPTIONS): 
     roleplay: {
       name: "Voice Explorer",
       tools: {
-        ...(await getHumeMcpTools({descriptions}))
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
       },
       initialMessage: "I'd like to explore what types of voices are available. Can you help me find some interesting options?",
       roleplayerPrompt: `You are roleplaying a user who wants to explore the different voice options available from the Hume Octave TTS API. You're curious about what types of pre-made voices exist and want to hear examples.
@@ -297,7 +303,7 @@ export const aiPoetScenario = async (descriptions: typeof DESCRIPTIONS): Promise
     roleplay: {
       name: "AI Poet",
       tools: {
-        ...(await getHumeMcpTools({descriptions})),
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
         'get_poem': getContent('This tool is able to retrieve poems requested by the user.', {
           'haiku1': haikus[0],
           'haiku2': haikus[1],
@@ -338,7 +344,7 @@ export const aiPlaywrightScenario = async (descriptions: typeof DESCRIPTIONS): P
     roleplay: {
       name: "AI Playwright",
       tools: {
-        ...(await getHumeMcpTools({ descriptions })),
+        ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
         'get_scene': getContent('This tool is able to retrieve dialogue for the play.', {
           'full_scene': dialogueContent,
         })

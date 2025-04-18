@@ -55,7 +55,7 @@ const turn = (lastTranscriptEntry: TranscriptEntry): Assistant => {
 }
 const endRoleplayTool: AnthropicTool = {
   name: 'end_roleplay',
-  description: 'Call this tool when you have fulfilled the goal of the roleplay, or when you have failed to make progress towards your goal for several turns.',
+  description: 'Call this tool when you have fulfilled the goal of the roleplay, or when you have failed to make progress towards your goal for more than two turns.',
   input_schema: {
     type: 'object',
     properties: {

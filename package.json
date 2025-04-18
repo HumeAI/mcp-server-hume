@@ -16,6 +16,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@modelcontextprotocol/sdk": "^1.8.0",
     "@types/chai": "^5.2.1",
+    "bottleneck": "^2.19.5",
     "chai": "^5.2.0",
     "hume": "^0.10.0",
     "zod": "^3.24.2"

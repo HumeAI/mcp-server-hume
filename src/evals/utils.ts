@@ -1,10 +1,11 @@
+import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { DESCRIPTIONS, getHumeToolDefinitions } from '../index.js';
 import { ScenarioTool, TranscriptEntry } from './roleplay.js';
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
 
 export const getHumeMcpTools = async (args: {
   descriptions: typeof DESCRIPTIONS,
-  handler: (input: unknown) => Promise<ToolResultBlockParam['content']>,
+  handler: (toolName: string, input: unknown) => Promise<CallToolResult>,
   displayUse: (input: unknown) => string,
   displayResult: (result: ToolResultBlockParam['content']) => string
 }): Promise<Record<string, ScenarioTool>> => {
@@ -12,11 +13,25 @@ export const getHumeMcpTools = async (args: {
   const tools = await getHumeToolDefinitions(descriptions);
   const scenarioTools: Record<string, ScenarioTool> = {};
   
+  const anthropicHandler = (toolName: string) => async (input: unknown): Promise<ToolResultBlockParam['content']> => {
+    const mcpContent = (await handler(toolName, input)).content;
+    const content: ToolResultBlockParam['content'] = []
+    for (const block of mcpContent) {
+      if (block.type === 'text') {
+        content.push({
+          "type": 'text',
+          "text": block.text,
+        })
+      }
+      throw new Error(`Unsupported block type: ${block.type}`);
+    }
+    return content
+  }
   for (const tool of tools) {
     scenarioTools[tool.name] = {
       description: tool.description,
       inputSchema: tool.inputSchema,
-      handler,
+      handler: anthropicHandler(tool.name),
       displayUse: (input) => displayUse(input),
       displayResult: (result) => displayResult(result)
     }

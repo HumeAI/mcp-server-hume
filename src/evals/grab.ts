@@ -65,7 +65,6 @@ const getToolsFromServer = async (toolName: string, config: ToolConfig): Promise
   return serverTools;
 }
 
-type Mode = "json" | "typescript"
 async function main() {
   const rawMode = process.argv[2];
   if (!rawMode) {

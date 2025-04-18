@@ -1,0 +1,33 @@
+{
+  "TTS_TOOL": "Converts text into natural-sounding speech audio. Use when generating voice content from text, creating custom voice characters, or reading content aloud. The tool supports both creating new voice designs through descriptive prompts and generating speech with existing voices. For optimal results, match text content with appropriate voice characteristics and segment longer content into coherent chunks.",
+  
+  "TTS_UTTERANCE_TEXT": "The text content to be spoken. Use for any text you want converted to speech, keeping each segment to 1-3 paragraphs for optimal processing. For dialogue, include only the actual spoken lines without narration or speaker attributions to create more natural-sounding character speech.",
+  
+  "TTS_UTTERANCE_DESCRIPTION": "Natural language instructions describing voice characteristics. When voiceName or continuationOf is provided, this acts as 'acting instructions' that modulate the existing voice to match the emotional tone and delivery style while maintaining voice consistency. When used without voiceName or continuationOf, this acts as a 'voice description' that creates a completely new voice. For successful voice design, description alone is often NOT ENOUGH - pair it with stylized 'text' that includes appropriate punctuation, dialect patterns, and emotionality matching the desired voice characteristics, then save the resulting voice to use with your actual content.",
+  
+  "TTS_VOICE_NAME": "The identifier of a specific voice from the voice library. Use when you want to apply a consistent voice across multiple utterances or sessions. Essential for multi-character content where each character needs a distinct voice identity maintained throughout the interaction.",
+  
+  "TTS_PROVIDER": "Specifies the source of the voice being used. Set to 'HUME_AI' only when accessing Hume's pre-built voices, or leave as default 'CUSTOM_VOICE' for user-created voices. This parameter is only required when using the voiceName parameter.",
+  
+  "TTS_UTTERANCE_SPEED": "Controls speaking rate from 0.5 (half speed) to 2.0 (double speed). Use to adjust pacing based on content requirements or user preferences. Slower speeds (0.5-0.8) enhance comprehension of complex content, normal speeds (0.9-1.1) work for standard reading, and faster speeds (1.2-2.0) accelerate delivery of straightforward content.",
+  
+  "TTS_UTTERANCE_TRAILING_SILENCE": "Duration of silence (0-5 seconds) added after speech completion. Use to create natural pauses between sentences, paragraphs, or speakers. Small values (0.2-0.5s) create natural breathing pauses, medium values (0.5-1.5s) separate distinct thoughts, and larger values (2-5s) create dramatic or narrative breaks.",
+  
+  "TTS_CONTINUATION": "The generationId from a previous TTS call that ensures consistent speech characteristics across sequential segments. Always specify this for all segments after the first when processing longer content in multiple TTS calls. This is critical for maintaining voice consistency, natural transitions, and proper prosody between sequential audio segments, creating a seamless listening experience.",
+  
+  "TTS_QUIET": "Boolean flag that prevents automatic audio playback when set to true. Use when generating multiple sequential audio segments that will be played in order later. This avoids interrupting the flow with premature playback, especially when creating a continuous narrative from multiple text segments.",
+  
+  "PLAY_PREVIOUS_AUDIO": "Replays a previously generated audio segment using its generationId. Use when specifically requested to repeat content or when comparing different voice options. Avoid unnecessary replaying of content that was just generated and played, as this creates redundancy in the interaction.",
+  
+  "LIST_VOICES": "Retrieves available voices from the voice library. Use when exploring voice options before selecting one for content generation. This helps users discover the range of available voices and their characteristics before committing to a specific voice for their content.",
+  
+  "LIST_VOICES_PROVIDER": "Specifies which collection of voices to list. Set to 'HUME_AI' for Hume's pre-built voices or 'CUSTOM_VOICE' for user-created voices. This parameter helps filter the voice library to show only relevant options based on whether the user wants to use standard voices or their own custom creations.",
+  
+  "DELETE_VOICE": "Removes a custom voice from the voice library. Use when managing voice collections to remove unwanted or outdated voice designs. This helps keep the voice library organized and focused on actively used voices.",
+  
+  "SAVE_VOICE": "Preserves a generated voice in the Voice Library for future use. Use when a user is satisfied with a voice design they want to reuse across sessions. This is especially important for recurring characters, brand voices, or after iterative voice design processes that result in a preferred voice.",
+  
+  "SAVE_VOICE_GENERATION_ID": "The unique identifier of the voice generation to be saved. Use the generationId returned from a successful TTS call that produced a voice the user wants to keep. This links the saved voice entry to the specific voice characteristics generated in that TTS operation.",
+  
+  "SAVE_VOICE_NAME": "A descriptive name for the saved voice. Use clear, descriptive names that indicate the voice's key characteristics for easy future reference. Good naming practices include character role, gender, age, and distinctive traits (e.g., 'Elderly_Scottish_Narrator' or 'Energetic_Teen_Host')."
+}
