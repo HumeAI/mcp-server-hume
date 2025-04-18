@@ -76,29 +76,43 @@ export type ScenarioTool = {
   description: Tool['description'],
   inputSchema: Tool['inputSchema'],
   handler: (input: unknown) => Promise<ToolResultBlockParam['content']>
+  displayUse: (input: unknown) => string
+  displayResult: (input: ToolResultBlockParam['content']) => string
 }
 
-export type Scenario = {
+export type RoleplayScenario = {
   name: string;
   roleplayerPrompt: string;
   initialMessage: string;
   tools: Record<string, ScenarioTool>
 }
 
+export type RoleplayResult = {
+  status: 'success' | 'failure';
+  reason: string;
+}
+
 export class Roleplay implements AsyncIterable<TranscriptEntry> {
   private anthropic: Anthropic;
   private transcript: TranscriptEntry[];
-  private scenario: Scenario;
+  private scenario: RoleplayScenario;
   private model: string;
-  private result: { status: 'success' | 'failure', reason: string } | null = null;
+  private result: RoleplayResult | 'incomplete' = 'incomplete';
+  private throttle: <T>(operation: () => Promise<T>) => Promise<T>;
 
-  constructor(apiKey: string, scenario: Scenario, model = "claude-3-5-haiku-latest") {
+  constructor(
+    apiKey: string, 
+    scenario: RoleplayScenario, 
+    model = "claude-3-5-haiku-latest",
+    throttleFn?: <T>(operation: () => Promise<T>) => Promise<T>
+  ) {
     if (!apiKey) {
       throw new Error("API key is required");
     }
     this.anthropic = new Anthropic({ apiKey });
     this.scenario = scenario;
     this.model = model;
+    this.throttle = throttleFn || (<T>(op: () => Promise<T>) => op()); // Identity function if no throttle provided
     this.transcript = [{
       type: 'spoke',
       speaker: 'roleplayer',
@@ -117,11 +131,11 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
     return transcript;
   }
 
-  end(status: 'success' | 'failure', reason: string) {
+  end(status: RoleplayResult['status'], reason: string) {
     this.result = { status, reason };
   }
 
-  public getResult(): { status: 'success' | 'failure', reason: string } | null {
+  public getResult(): RoleplayResult | 'incomplete' {
     return this.result
   }
 
@@ -164,7 +178,15 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
     }
   }
 
-  static translateTranscript(assistant: Assistant, transcript: TranscriptEntry[]): MessageParam[] {
+  displayToolUse(entry: TranscriptEntry & {type: 'tool_use'}): string {
+    return this.scenario.tools[entry.name].displayUse(entry.input)
+  }
+  displayToolResult(entry: TranscriptEntry & {type: 'tool_result'}): string {
+    return this.scenario.tools[entry.name].displayResult(entry.content)
+  }
+
+
+  translateTranscript(assistant: Assistant, transcript: TranscriptEntry[]): MessageParam[] {
     switch (assistant) {
       case 'roleplayer':
         return transcript.map((entry): MessageParam => {
@@ -176,10 +198,10 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
           // and so rather than providing literal tool_use and tool_response messages we just put textual representations
           // of them as text messages.
           if (entry.type === 'tool_use') {
-            return { role: 'user', content: `Tool use: (${JSON.stringify(entry)})` };
+            return { role: 'user', content: this.displayToolUse(entry)};
           }
           if (entry.type === 'tool_result') {
-            return { role: 'assistant', content: `Tool response: (${JSON.stringify(entry)})` };
+            return { role: 'assistant', content: this.displayToolResult(entry)};
           }
           return exhaustive(entry)
         });
@@ -280,16 +302,16 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
 
   async handleRoleplayerTurn(): Promise<TranscriptEntry[]> {
     try {
-      const response = await this.anthropic.messages.create({
+      const response = await this.throttle(() => this.anthropic.messages.create({
         model: this.model,
         system: this.scenario.roleplayerPrompt,
-        messages: Roleplay.translateTranscript('roleplayer', this.transcript),
+        messages: this.translateTranscript('roleplayer', this.transcript),
         tools: [endRoleplayTool],
         max_tokens: 1000,
-      });
+      }));
       return this.handleResponse('roleplayer', response)
     } catch (e: any) {
-      debugLog(JSON.stringify(Roleplay.translateTranscript('roleplayer', this.transcript)))
+      debugLog(JSON.stringify(this.translateTranscript('roleplayer', this.transcript)))
       throw e
     }
   }
@@ -300,22 +322,22 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
       debugLog("Raw transcript before API call:", JSON.stringify(this.transcript, null, 2));
 
       // Get converted messages for API
-      const messages = Roleplay.translateTranscript('agent', this.transcript);
+      const messages = this.translateTranscript('agent', this.transcript);
       debugLog("Messages for API:", JSON.stringify(messages, null, 2));
 
-      // Perform the API call
-      const response = await this.anthropic.messages.create({
+      // Perform the API call with throttling
+      const response = await this.throttle(() => this.anthropic.messages.create({
         model: this.model,
         messages: messages,
         tools: this.getAnthropicTools(),
         max_tokens: 1000,
-      });
+      }));
 
       return this.handleResponse('agent', response)
     } catch (e: any) {
       console.error("Error in handleAgentTurn:", e.message);
       debugLog("Full transcript at time of error:", JSON.stringify(this.transcript, null, 2));
-      debugLog("API messages that caused error:", JSON.stringify(Roleplay.translateTranscript('agent', this.transcript), null, 2));
+      debugLog("API messages that caused error:", JSON.stringify(this.translateTranscript('agent', this.transcript), null, 2));
       throw e
     }
   }

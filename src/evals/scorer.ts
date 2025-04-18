@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { TranscriptEntry } from './roleplay.js';
+import { RoleplayResult, TranscriptEntry } from './roleplay.js';
 
 export type Criteria = Record<string, string>;
 
@@ -14,7 +14,7 @@ export type ScoredCriterion = {
 export const scoreCriteria = async (
   apiKey: string,
   criteria: Criteria,
-  data: { transcript: TranscriptEntry[], result: any }
+  data: { transcript: TranscriptEntry[], result: RoleplayResult | 'incomplete' }
 ): Promise<ScoredCriterion[]> => {
   const anthropic = new Anthropic({ apiKey });
 
