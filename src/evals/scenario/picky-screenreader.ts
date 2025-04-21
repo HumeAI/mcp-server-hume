@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DESCRIPTIONS } from '../../index.js';
 import { getHumeMcpTools } from '../utils.js';
-import { EvalScenario, commonCriteria, singleToolInstructions, beTerse, endRoleplayIfOffTrack, voiceDesignCriteria } from './types.js';
+import { EvalScenario, commonCriteria, commonInstructions, voiceDesignCriteria } from './types.js';
 import { getContent, handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const pickyScreenreaderScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
@@ -24,11 +24,7 @@ export const pickyScreenreaderScenario = async (descriptions: typeof DESCRIPTION
 
       Start by asking for the blog post to be read. After the agent has started reading (using the tts tool), you should express dissatisfaction with the voice. Progressively discover what criteria you are seeking in a voice.
 
-      ${singleToolInstructions}
-
-      ${beTerse}
-      
-      ${endRoleplayIfOffTrack}
+      ${commonInstructions}
       
       End the roleplay when the agent has helped you have the blog post read to you in a satisfactory voice.
       `

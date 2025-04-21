@@ -2,19 +2,12 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DESCRIPTIONS } from '../../index.js';
 import { getHumeMcpTools } from '../utils.js';
-import { EvalScenario, commonCriteria, sceneTtsInstructions, beTerse, endRoleplayIfOffTrack, voiceDesignCriteria } from './types.js';
+import { EvalScenario, commonCriteria, commonInstructions, voiceDesignCriteria } from './types.js';
 import { getContent, handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const aiPlaywrightScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
   // Read dialogue content from data file
   const dialogueContent = await fs.readFile(path.join(__dirname, '/../data/play_dialogue.txt'), 'utf-8');
-
-  // Get voice design text to populate criteria
-  const voiceDesignText = await fs.readFile(path.join(__dirname, '/../data/voice_design.txt'), 'utf-8');
-  const designCriteria = {
-    ...voiceDesignCriteria,
-    voice_design_well_done: voiceDesignCriteria.voice_design_well_done.replace('{{VOICE_DESIGN_TEXT}}', voiceDesignText)
-  };
 
   return {
     roleplay: {
@@ -32,18 +25,14 @@ export const aiPlaywrightScenario = async (descriptions: typeof DESCRIPTIONS): P
 
       After the agent helps you find the dialogue, express interest in hearing it performed. When the agent uses the tts tool to perform the dialogue, provide feedback on the voices used.
 
-      ${sceneTtsInstructions}
-
-      ${beTerse}
-      
-      ${endRoleplayIfOffTrack}
+      ${commonInstructions}
       
       End the roleplay when you've heard a satisfactory performance of the dialogue that captures both characters with appropriate voices.
       `
     },
     criteria: {
       ...commonCriteria,
-      ...designCriteria,
+      ...voiceDesignCriteria,
       diarization: "The agent should use save_voice to create a voice for each character, and each utterance dialogue belonging to that character should always be voiced with that voice.",
       one_speaker_per_request: "All utterances within a single tts call should be spoken by the same character. The agent should not mix voices within a single tts call.",
       only_speech: "The 'text' passed to the tts tool should contain only the text meant to be spoken. It should be stripped of any stage directions, or speaker names, or section titles"

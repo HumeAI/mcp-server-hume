@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DESCRIPTIONS } from '../../index.js';
 import { getHumeMcpTools } from '../utils.js';
-import { EvalScenario, commonCriteria, singleToolInstructions, beTerse, endRoleplayIfOffTrack } from './types.js';
+import { EvalScenario, commonCriteria, commonInstructions } from './types.js';
 import { getContent, handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const habitualScreenreaderScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
@@ -26,11 +26,7 @@ can you read me the blog post at https://openai.com/index/chatgpt/
 
       You will start by asking the agent to read a blog post. You expect the agent to remember your voice preference "AVA SONG" that you have specified.
 
-      ${singleToolInstructions}
-
-      ${beTerse}
-      
-      ${endRoleplayIfOffTrack}
+      ${commonInstructions}
       
       End the roleplay when the blog post has been read to you in your preferred voice, or when you become frustrated with the agent.
       `

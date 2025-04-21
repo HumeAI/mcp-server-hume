@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DESCRIPTIONS } from '../../index.js';
 import { getHumeMcpTools } from '../utils.js';
-import { EvalScenario, commonCriteria, singleToolInstructions, beTerse, endRoleplayIfOffTrack } from './types.js';
+import { EvalScenario, commonCriteria, commonInstructions } from './types.js';
 import { getContent, handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const screenreaderScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
@@ -16,17 +16,14 @@ export const screenreaderScenario = async (descriptions: typeof DESCRIPTIONS): P
         get_blog_post: getContent('This tool is able to retrieve sections of the blog post at https://openai.com/index/chatgpt/', {
           'firstContent': blogParagraphs[0] + '\n\n' + blogParagraphs[1],
           'secondContent': blogParagraphs[2] + '\n\n' + blogParagraphs[3] + blogParagraphs[4] + '\n\n' + blogParagraphs[5],
+          'paragraphWithCode': blogParagraphs.find((p) => p.includes('func'))!,
           'lastParagraph': blogParagraphs[blogParagraphs.length - 1],
         })
       },
       initialMessage: "yo, can you read me the blog post at https://openai.com/index/chatgpt/",
       roleplayerPrompt: `You are roleplaying a user conversing with an AI agent. Your goal is to hear a blog post read out loud to you. You are lazy. You use abbreviations and provide only the barest outline of instructions, expecting your agent to use reasoning to determine your meaning.
 
-      ${singleToolInstructions}
-      
-      ${beTerse}
-      
-      ${endRoleplayIfOffTrack}
+      ${commonInstructions}
       `
     },
     criteria: { ...commonCriteria },

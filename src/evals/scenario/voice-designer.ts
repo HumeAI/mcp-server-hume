@@ -2,17 +2,15 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { DESCRIPTIONS } from '../../index.js';
 import { getHumeMcpTools } from '../utils.js';
-import { EvalScenario, commonCriteria, voiceTtsInstructions, beTerse, endRoleplayIfOffTrack, voiceDesignCriteria } from './types.js';
+import { 
+  EvalScenario, 
+  commonCriteria, 
+  commonInstructions,
+  voiceDesignCriteria 
+} from './types.js';
 import { handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const voiceDesignerScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
-  // Get voice design text to populate criteria
-  const voiceDesignText = await fs.readFile(path.join(__dirname, '/../data/voice_design.txt'), 'utf-8');
-  const designCriteria = {
-    ...voiceDesignCriteria,
-    voice_design_well_done: voiceDesignCriteria.voice_design_well_done.replace('{{VOICE_DESIGN_TEXT}}', voiceDesignText)
-  };
-
   return {
     roleplay: {
       name: "Voice Designer",
@@ -28,18 +26,14 @@ export const voiceDesignerScenario = async (descriptions: typeof DESCRIPTIONS): 
 
       You should engage in 3-4 rounds of feedback before being satisfied with a voice.
 
-      ${voiceTtsInstructions}
-
-      ${beTerse}
-      
-      ${endRoleplayIfOffTrack}
+      ${commonInstructions}
       
       End the roleplay when you are satisfied with a voice design that has been presented to you and have saved the voice with an appropriate name.
       `
     },
     criteria: {
       ...commonCriteria,
-      ...designCriteria,
+      ...voiceDesignCriteria,
       "diverse_options": "The agent should offer diverse voice description options to help the user explore the voice space.",
       "follows_feedback": "The agent should adapt voice descriptions based on the user's feedback.",
       "save_voice_offered": "The agent should suggest saving the final voice when the user is satisfied.",

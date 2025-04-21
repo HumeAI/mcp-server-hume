@@ -1,6 +1,6 @@
 import { DESCRIPTIONS } from '../../index.js';
 import { getHumeMcpTools } from '../utils.js';
-import { EvalScenario, voiceExplorerInstructions, beTerse, endRoleplayIfOffTrack } from './types.js';
+import { EvalScenario, commonInstructions } from './types.js';
 import { handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const voiceExplorerScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
@@ -17,11 +17,7 @@ export const voiceExplorerScenario = async (descriptions: typeof DESCRIPTIONS): 
 
       Express interest in hearing examples of different voices, and occasionally ask for more specific types (e.g., "Do you have any voices with accents?" or "How about something more dramatic?").
 
-      ${voiceExplorerInstructions}
-
-      ${beTerse}
-      
-      ${endRoleplayIfOffTrack}
+      ${commonInstructions}
       
       End the roleplay after you've explored several different voice options and have expressed satisfaction with the exploration.
       `
