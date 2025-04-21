@@ -3,9 +3,9 @@ import * as path from 'path';
 import { DESCRIPTIONS } from '../index.js';
 import { Roleplay, RoleplayResult } from './roleplay.js';
 import { scoreCriteria, ScoredCriterion } from './scorer.js';
-import { getScenarios } from './eval_scenarios.js';
 import { prettyTranscriptEntry } from './utils.js';
 import Bottleneck from 'bottleneck';
+import { getScenarios } from './scenario/index.js';
 
 // Configure a bottleneck limiter for Anthropic API calls
 const anthropicLimiter = new Bottleneck({
