@@ -1,16 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { HumeClient } from "hume";
+import type { Hume} from "hume"
 import { z } from "zod";
 import { exec } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import {
-  PostedContextWithGenerationId,
-  PostedTts,
-  PostedUtterance,
-} from "hume/api/resources/tts";
 import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { withStdinAudioPlayer } from "./play_audio.js";
 import { FileHandle } from "fs/promises";
@@ -134,9 +130,9 @@ export const handleTts = async ({
   quiet,
   utterances: utterancesInput,
 }: TTSCall): Promise<CallToolResult> => {
-  const utterances: Array<PostedUtterance> = [];
+  const utterances: Array<Hume.tts.PostedUtterance> = [];
   for (const utt of utterancesInput) {
-    let utterance: PostedUtterance = {
+    let utterance: Hume.tts.PostedUtterance = {
       text: utt.text,
       description: utt.description ?? undefined,
       speed: utt.speed ?? undefined,
@@ -151,10 +147,10 @@ export const handleTts = async ({
     utterances.push(utterance);
   }
 
-  const context: PostedContextWithGenerationId | null = continuationOf
+  const context: Hume.tts.PostedContextWithGenerationId | null = continuationOf
     ? { generationId: continuationOf }
     : null;
-  const request: PostedTts = {
+  const request: Hume.tts.PostedTts = {
     utterances,
     stripHeaders: true,
     instantMode: true,
