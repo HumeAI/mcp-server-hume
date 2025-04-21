@@ -29,7 +29,7 @@ This tool is useful for:
       
   b) Reading content:
     For text reading, use incremental retrieval and playback in manageable chunks. Always use continuation for coherent speech across segments. Provide informative but concise descriptions for each utterance to achieve appropriate tone and style.`,
-  TTS_UTTERANCE_TEXT: "The input text to be synthesized into speech.",
+  TTS_UTTERANCE_TEXT: "The input text to be synthesized into speech. Avoid including unpronounceable text such as code, formatting symbols, or emojis. Best practice is to convert such text content into natural speech markers when it is obvious how to do so. Also consider using placeholders that summarize the unpronounceable content.",
   TTS_UTTERANCE_DESCRIPTION:
     "Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.",
   TTS_VOICE_NAME:
