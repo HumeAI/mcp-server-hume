@@ -1,10 +1,10 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { DESCRIPTIONS, handlePlayPreviousAudio, TTSSchema, ttsSuccess } from '../index.js';
+import { DESCRIPTIONS, handlePlayPreviousAudio, playPreviousAudioSuccess, TTSSchema, ttsSuccess } from '../index.js';
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
 import { ScenarioTool } from './roleplay.js';
 import { getHumeMcpTools } from './utils.js';
-import { uuid } from 'uuid';
+import { v4 as uuid } from 'uuid';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 // Common prompt instructions
@@ -41,18 +41,20 @@ export const commonCriteria = {
   incremental_playback: "Each utterance passed to the tts tool should be no longer than a single paragraph. Each call to the tts tool should be no longer than three paragraphs.",
   verbosity: "The agent should be concise and avoid unnecessary verbosity.",
   continuation_used_properly: "The agent should specify the continuationOf when calling the tts tool in all calls except for the initial one, unless the user has requested a restart or a different voice.",
-};
+}
 const voiceDesignCriteria = {
   voice_design_well_done: `When crafting voice descriptions, or presenting the user with voice options, or guiding the user through the process of voice design, the agent should abide by the following directions:\n\n ${await fs.readFile(path.join(__dirname, '/data/voice_design.txt'), 'utf-8')}`,
 }
 
 const handler = async (toolName: string, input: unknown): Promise<CallToolResult> => {
-  const text = TTSSchema(DESCRIPTIONS).parse(input).utterances.map((u) => u.text).join(' ');
   if (toolName === 'tts') {
-    return ttsSuccess(uuid.v4(), text);
+    console.log(toolName, input)
+    const text = TTSSchema(DESCRIPTIONS).parse(input).utterances.map((u) => u.text).join(' ');
+    return ttsSuccess([uuid()], text);
   }
   if (toolName === 'play_previous_audio') {
-    return (await handlePlayPreviousAudio(input as any));
+    const generationId = (input as any).generationId;
+    return playPreviousAudioSuccess(generationId, '/tmp/hume/' + generationId + '.wav')
   }
   if (toolName === 'list_voices') {
     return {
@@ -129,7 +131,7 @@ export const screenreaderScenario = async (descriptions: typeof DESCRIPTIONS): P
       name: "Simple Screenreader",
       tools: {
         ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
-        get_content: getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
+        get_blog_post: getContent('This tool is able to retrieve sections of the blog post at https://openai.com/index/chatgpt/', {
           'firstContent': blogParagraphs[0] + '\n\n' + blogParagraphs[1],
           'secondContent': blogParagraphs[2] + '\n\n' + blogParagraphs[3] + blogParagraphs[4] + '\n\n' + blogParagraphs[5],
           'lastParagraph': blogParagraphs[blogParagraphs.length - 1],
@@ -158,7 +160,7 @@ export const pickyScreenreaderScenario = async (descriptions: typeof DESCRIPTION
       name: "Picky Screenreader",
       tools: {
         ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
-        get_content: getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
+        get_content: getContent('This tool is able to retrieve sections of the blog post at https://openai.com/index/chatgpt/', {
           'firstContent': postParagraphs[0] + '\n\n' + postParagraphs[1],
           'secondContent': postParagraphs[2] + '\n\n' + postParagraphs[3] + postParagraphs[4] + '\n\n' + postParagraphs[5],
           'lastParagraph': postParagraphs[postParagraphs.length - 1],
@@ -196,7 +198,7 @@ export const habitualScreenreaderScenario = async (descriptions: typeof DESCRIPT
       name: "Habitual Screenreader",
       tools: {
         ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
-        get_content: getContent('This tool is able to retrieve sections of the blog post requested by the user.', {
+        get_content: getContent('This tool is able to retrieve sections of the blog post at https://openai.com/index/chatgpt/', {
           'firstContent': blogParagraphs[0] + '\n\n' + blogParagraphs[1],
           'secondContent': blogParagraphs[2] + '\n\n' + blogParagraphs[3] + blogParagraphs[4] + '\n\n' + blogParagraphs[5],
           'lastParagraph': blogParagraphs[blogParagraphs.length - 1],

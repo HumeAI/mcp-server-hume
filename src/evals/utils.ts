@@ -22,6 +22,7 @@ export const getHumeMcpTools = async (args: {
           "type": 'text',
           "text": block.text,
         })
+        continue
       }
       throw new Error(`Unsupported block type: ${block.type}`);
     }

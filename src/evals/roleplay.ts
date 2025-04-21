@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Message, MessageParam, ToolResultBlockParam, ToolUseBlock } from "@anthropic-ai/sdk/resources/index.mjs";
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/index.mjs";
+import { ZodError } from "zod";
 
 const debugLog = (...args: any[]): void => {
   if (process.env.DEBUG) {
@@ -223,7 +224,7 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
     }
   }
 
-  async handleToolUse(block: ToolUseBlock): Promise<[TranscriptEntry, TranscriptEntry]> {
+  async handleToolUse(block: ToolUseBlock): Promise<[TranscriptEntry, TranscriptEntry] | []> {
     debugLog(`Tool use detected: ${block.name} with id ${block.id}`);
 
     const tool = this.scenario.tools[block.name];
@@ -243,21 +244,30 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
       input
     };
 
-    // Get result from tool handler
-    const result = await tool.handler(input);
+    try {
+      // Get result from tool handler
+      const result = await tool.handler(input);
 
-    // Create the tool result entry
-    const toolResult: TranscriptEntry = {
-      type: 'tool_result',
-      name: block.name,
-      content: result,
-      tool_use_id: id
-    };
+      // Create the tool result entry
+      const toolResult: TranscriptEntry = {
+        type: 'tool_result',
+        name: block.name,
+        content: result,
+        tool_use_id: id
+      };
 
-    debugLog(`Tool result created: tool_use_id=${id}, name=${block.name}`);
+      debugLog(`Tool result created: tool_use_id=${id}, name=${block.name}`);
 
-    // Return both entries
-    return [toolUse, toolResult];
+      // Return both entries
+      return [toolUse, toolResult];
+    }
+    catch (e) {
+      if (e instanceof ZodError) {
+        console.error(`ZodError in tool handler for ${block.name}: ${e.errors}. Looks like Claude produced malformed tool use`);
+        return []
+      }
+      throw e
+    }
   }
 
   async handleResponse(assistant: Assistant, response: Message): Promise<TranscriptEntry[]> {
@@ -274,10 +284,7 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
       }
       if (block.type === 'tool_use') {
         if (assistant === 'agent') {
-          // Now handleToolUse returns both tool use and tool result entries
-          const [toolUse, toolResult] = await this.handleToolUse(block);
-          ret.push(toolUse);
-          ret.push(toolResult);
+          ret.push(...(await this.handleToolUse(block)));
           continue
         }
         if (assistant === 'roleplayer') {
@@ -285,7 +292,10 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
             this.end((block as any).input.status, (block as any).input.reason);
             continue
           }
-          throw new Error(`Unexpected tool use block from roleplayer: ${block.name}`);
+          // It seems unavoidable that the roleplayer will attempt to use tools it doesn't
+          // have access to. We can just ignore these and try again
+          console.warn(`Unexpected tool use block from roleplayer: ${block.name}`);
+          continue
         }
         return exhaustive(assistant)
       }

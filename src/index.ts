@@ -12,6 +12,8 @@ import {
   PostedUtterance,
 } from "hume/api/resources/tts";
 import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { withStdinAudioPlayer } from "./play_audio.js";
+import { FileHandle } from "fs/promises";
 
 // Tool descriptions
 export const DESCRIPTIONS = {
@@ -50,7 +52,7 @@ const truncate = (str: string, maxLength: number) => {
 }
 
 // Global map to store file paths by generationId
-export const audioMap = new Map<string, string[]>();
+export const audioMap = new Map<string, string>();
 
 let logFile: fs.FileHandle;
 
@@ -139,42 +141,56 @@ export const handleTts = async ({ continuationOf, voiceName, quiet, utterances: 
   }
 
   const context: PostedContextWithGenerationId | null = continuationOf ? { generationId: continuationOf } : null;
-  const request: PostedTts = { utterances, ...(context ? { context } : {}) };
+  const request: PostedTts = { utterances, stripHeaders: true, instantMode: true, ...(context ? { context } : {}) };
 
   const text = utterances.map((u) => u.text).join(" ");
   log(`Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`);
-  const createdAt = Date.now();
 
   try {
     const tempDir = path.join(os.tmpdir(), "hume-tts");
     await fs.mkdir(tempDir, { recursive: true });
 
-    const generationIds = new Set<string>();
-    let playback = Promise.resolve();
     const chunks: Array<{ audio: string; generationId: string }> = [];
+    const files: Map<string, FileHandle> = new Map();
 
-    for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
-      log(`Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => k === "audio" ? "[Audio Data]" : undefined)}`);
-      chunks.push(audioChunk);
-      const generationIndex = chunks.filter((chunk) => chunk.generationId === audioChunk.generationId).length - 1;
-      const { audio, generationId } = audioChunk;
-      generationIds.add(generationId);
-
-      const audioData = Buffer.from(audio, "base64");
-      const fileName = `${generationId}-chunk-${generationIndex}.wav`;
-      const tempFilePath = path.join(tempDir, fileName);
-
-      await fs.writeFile(tempFilePath, audioData);
-      if (!quiet) playback = playback.then(() => playAudio(tempFilePath));
-
-      const generationChunks = audioMap.get(generationId);
-      if (generationChunks) generationChunks.push(tempFilePath);
-      else audioMap.set(generationId, [tempFilePath]);
-
-      log(`Stored audio chunk for generationId: ${generationId}, file: ${tempFilePath}, created at ${createdAt}`);
+    const filePathOf = (generationId: string) => path.join(tempDir, `${generationId}.wav`)
+    const writeToFile = async (generationId: string, audioBuffer: Buffer) => {
+      let fileHandle
+      if (!files.has(generationId)) {
+        const filePath = filePathOf(generationId);
+        log(`Writing to ${filePath}...`);
+        fileHandle = await fs.open(filePath, "w");
+        files.set(generationId, fileHandle);
+        audioMap.set(generationId, filePath);
+      } else {
+        fileHandle = files.get(generationId);
+      }
+      await fileHandle!.write(audioBuffer);
     }
-    await playback;
-    return ttsSuccess([...generationIds], text);
+
+    const go = async (writeAudio: (audioBuffer: Buffer) => void) => {
+      for await (const audioChunk of await hume.tts.synthesizeJsonStreaming(request)) {
+        log(`Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => k === "audio" ? "[Audio Data]" : undefined)}`);
+        chunks.push(audioChunk);
+        const { audio, generationId } = audioChunk;
+
+        const buf = Buffer.from(audio, 'base64')
+        await Promise.all([
+          writeToFile(generationId, buf),
+          writeAudio(buf)
+        ])
+      }
+    }
+    if (quiet) {
+      const noopWriteAudio = () => {}
+      await go(noopWriteAudio);
+    } else {
+      await withStdinAudioPlayer(null, go)
+    }
+
+    await Promise.all(Array.from(files.values()).map((file) => file.close()));
+
+    return ttsSuccess([...files.keys()], text);
   } catch (error) {
     log(`Error synthesizing speech: ${error instanceof Error ? error.message : String(error)}`);
     return {
@@ -188,6 +204,14 @@ export const handleTts = async ({ continuationOf, voiceName, quiet, utterances: 
   }
 };
 
+export const playPreviousAudioSuccess = (generationId: string, filePath: string): CallToolResult => ({
+  content: [
+    {
+      type: "text",
+      text: `Played audio for generationId: ${generationId}, file: ${filePath}`,
+    },
+  ],
+});
 export const handlePlayPreviousAudio = async ({ generationId }: { generationId: string }): Promise<CallToolResult> => {
   const filePaths = audioMap.get(generationId);
   if (!filePaths) return { content: [{ type: "text", text: `No audio found for generationId: ${generationId}` }] };
@@ -200,16 +224,12 @@ export const handlePlayPreviousAudio = async ({ generationId }: { generationId: 
     return { content: [{ type: "text", text: `Audio file for generationId: ${generationId} was not found at ${filePath}` }] };
   }
 
-  const ret: { type: "text"; text: string }[] = [];
   try {
-    for (const fp of filePaths) {
-      await playAudio(fp);
-      ret.push({ type: "text", text: `Played audio for generationId: ${generationId}, file: ${fp}` });
-    }
-    return { content: ret };
+  await playAudio(filePath);
   } catch (e) {
-    return { content: [{ type: "text", text: (e as Error).message }], isError: true };
+    return { content: [{ type: "text", text: `Error playing audio for generationId: ${generationId}: ${e}` }], isError: true };
   }
+  return playPreviousAudioSuccess(generationId, filePath);
 };
 
 export const handleListVoices = async ({
