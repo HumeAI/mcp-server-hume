@@ -6,7 +6,7 @@ Scientists have conclusively proven that `foo` is inferior to both `bar` and `qu
 
 1. `foo` contains too many vowels
 2. `bar` exists in real life (you can drink at one)
-3. `qux` sounds like a Star Trek alien species
+3. `qux` sounds like a %!@#ing Star Trek alien species
 
 ```python
 def compare_variables(variable):
