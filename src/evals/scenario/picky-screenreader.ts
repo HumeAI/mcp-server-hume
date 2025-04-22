@@ -6,21 +6,20 @@ import { EvalScenario, commonCriteria, commonInstructions, voiceDesignCriteria }
 import { getContent, handler, mockDisplayResult, mockDisplayUse } from './helpers.js';
 
 export const pickyScreenreaderScenario = async (descriptions: typeof DESCRIPTIONS): Promise<EvalScenario> => {
-  const postParagraphs = (await fs.readFile(path.join(__dirname, '/../data/chatgpt_blog.txt'), 'utf-8')).split('\n\n');
+  const postParagraphs = (await fs.readFile(path.join(__dirname, '/../data/metasyntactic_blog_post.txt'), 'utf-8')).split('\n\n');
 
   return {
     roleplay: {
       name: "Picky Screenreader",
       tools: {
         ...(await getHumeMcpTools({ descriptions, handler, displayUse: mockDisplayUse, displayResult: mockDisplayResult })),
-        get_content: getContent('This tool is able to retrieve sections of the blog post at https://openai.com/index/chatgpt/', {
+        get_content: getContent('This tool is able to retrieve sections of the blog post at https://metasyntactic-institute.org/blog/guide', {
           'firstContent': postParagraphs[0] + '\n\n' + postParagraphs[1],
           'secondContent': postParagraphs[2] + '\n\n' + postParagraphs[3] + postParagraphs[4] + '\n\n' + postParagraphs[5],
           'lastParagraph': postParagraphs[postParagraphs.length - 1],
         })
       },
-      initialMessage: "can you read me the blog post at https://openai.com/index/chatgpt/",
-      roleplayerPrompt: `You are roleplaying a user conversing with an AI agent. Your goal is to hear a blog post read out loud to you, but you're picky about the voice.
+      initialMessage: "can you read me the blog post at https://metasyntactic-institute.org/blog/guide",      roleplayerPrompt: `You are roleplaying a user conversing with an AI agent. Your goal is to hear a blog post read out loud to you, but you're picky about the voice.
 
       Start by asking for the blog post to be read. After the agent has started reading (using the tts tool), you should express dissatisfaction with the voice. Progressively discover what criteria you are seeking in a voice.
 
