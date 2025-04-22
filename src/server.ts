@@ -9,6 +9,27 @@ import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { playAudioFile, getStdinAudioPlayer, AudioPlayer } from "./play_audio.js";
 import { FileHandle } from "fs/promises";
 
+
+const message = (text: string): CallToolResult['content'][number] => ({
+  type: "text",
+  text: JSON.stringify({ type: 'text', text }, null, 2),
+})
+
+const audioMessage = (generationId: string, base64: string): CallToolResult['content'][number] => ({
+  type: "resource",
+  resource: {
+    mimeType: "audio/wav",
+    uri: `hume-tts://${generationId}`,
+    blob: base64
+  },
+})
+
+const errorResult = (error: string): CallToolResult => ({
+  content: [{
+    type: "text",
+    text: JSON.stringify({ type: 'error', error }, null, 2),
+  }], isError: true
+})
 // Tool descriptions
 export const DESCRIPTIONS = {
   TTS_TOOL:
@@ -16,10 +37,11 @@ export const DESCRIPTIONS = {
     
 IMPORTANT GUIDELINES:
   1. ALWAYS provide "continuationOf" equal to the generation id of the previous TTS tool call unless you explicitly intend to speak with a different voice or you are narrating an entirely new body of text.
+  2. ALWAYS determine whether you are providing *performance* or *dictation*. When providing *performance* like, designing a new voice or working on a creative project such as an audiobook, podcast, or video dub, you should work in smaller batches and ALWAYS stop for human feedback after each request. It often takes multiple iteration to get the best output. When providing *dictation* content, such as when the user wants to hear content read aloud for themselves, you should provide larger requests (3-5 paragraphs) and continue without feedback.
   2. By default, make smaller requests (1-2 paragraphs) and stop for feedback often for *performance* content, for example when designing new voices or working on a creative project. Use larger requests (3-5 paragraphs) and continue without feedback for *dictation* content, when the user wants simply ones to hear content read aloud for themselves.
   3. When designing a new voice, provide "description" to match the users desired voice qualities (gender, accent, pitch, role, emotionality) and provide a "text" that also conveys the desired voice's style, emotion, and dialect. When designing a new voice, "text" need not be drawn from the source text the user ultimately wants spoken. Iterate based on user feedback.
   `,
-  
+
   TTS_UTTERANCES: `Provide only a single utterance when designing a new voice. Break source text into multiple utterances when there is a need to provide "acting instructions" that vary across different parts of the text, or to insert "trailing_silence" within a text.`,
   TTS_UTTERANCE_TEXT: `The input text to be synthesized into speech. Modify source text with punctuation or CAPITALS for emotional emphasis, when appropriate.
 
@@ -64,9 +86,9 @@ export const setLogFile = (file: fs.FileHandle) => {
   logFile = file;
 
 
-process.on("exit", async () => {
-  await logFile?.close();
-});
+  process.on("exit", async () => {
+    await logFile?.close();
+  });
 }
 
 export const log = (...args: any[]) => {
@@ -113,18 +135,16 @@ export const TTSSchema = (descriptions: typeof DESCRIPTIONS) =>
   z.object(ttsArgs(descriptions));
 export type TTSCall = z.infer<ReturnType<typeof TTSSchema>>;
 
-export const ttsSuccess = (generationIds: Array<string>, text: string) => ({
+export const ttsSuccess = (generationIdToAudio: Map<string, Buffer>, text: string) => ({
   content: [
-    {
-      type: "text" as const,
-      text: `Created audio for text: "${truncate(text, 50)}", generation ids: ${generationIds
-        .map((g) => {
-          const filePath = audioMap.get(g);
-          return `${g} (file: ${filePath})`;
-        })
-        .join(", ")}`,
-    },
-  ],
+    message(`Created audio for text: "${truncate(text, 50)}", generation ids: ${[...generationIdToAudio
+      .keys().map((g) => {
+        const filePath = audioMap.get(g);
+        return `${g} (file: ${filePath})`;
+      })]
+      .join(", ")}`),
+    ...generationIdToAudio.entries().map(([generationId, buf]: [string, Buffer]) => audioMessage(generationId, buf.toString('base64')))
+  ]
 });
 
 export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
@@ -179,6 +199,7 @@ export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
 
   const chunks: Array<{ audio: string; generationId: string }> = [];
   const files: Map<string, FileHandle> = new Map();
+  const fileAudioData: Map<string, Buffer> = new Map();
 
   const filePathOf = (generationId: string) =>
     path.join(tempDir, `${generationId}.wav`);
@@ -208,15 +229,7 @@ export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
   } catch (e) {
     log(`Error synthesizing speech: ${e}`);
     log(`${JSON.stringify(request)}`);
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error synthesizing speech: ${e} + ${(e as any).trace}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Error synthesizing speech: ${e} + ${(e as any).trace}`)
   }
   for await (const audioChunk of stream) {
     log(
@@ -227,12 +240,19 @@ export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
 
     const buf = Buffer.from(audio, "base64");
     audioPlayer.sendAudio(buf)
+    if (!fileAudioData.has(generationId)) {
+      fileAudioData.set(generationId, buf);
+    } else {
+      const currentBuffer = fileAudioData.get(generationId);
+      const newBuffer = Buffer.concat([currentBuffer || Buffer.alloc(0), buf]);
+      fileAudioData.set(generationId, newBuffer);
+    }
     await writeToFile(generationId, buf)
   }
   await Promise.all(Array.from(files.values()).map((file) => file.close()));
   await audioPlayer.close()
 
-  return ttsSuccess([...files.keys()], text);
+  return ttsSuccess(fileAudioData, text);
 };
 
 export const playPreviousAudioSuccess = (
@@ -240,10 +260,7 @@ export const playPreviousAudioSuccess = (
   filePath: string,
 ): CallToolResult => ({
   content: [
-    {
-      type: "text",
-      text: `Played audio for generationId: ${generationId}, file: ${filePath}`,
-    },
+    message(`Played audio for generationId: ${generationId}, file: ${filePath}`)
   ],
 });
 export const handlePlayPreviousAudio = async ({
@@ -252,43 +269,22 @@ export const handlePlayPreviousAudio = async ({
   generationId: string;
 }): Promise<CallToolResult> => {
   const filePaths = audioMap.get(generationId);
-  if (!filePaths)
-    return {
-      content: [
-        {
-          type: "text",
-          text: `No audio found for generationId: ${generationId}`,
-        },
-      ],
-    };
+  if (!filePaths) {
+    return errorResult(`No audio found for generationId: ${generationId}`)
+  }
 
   const filePath = filePaths[0];
   try {
     await fs.access(filePath);
   } catch {
     log(`File not found: ${filePath}`);
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Audio file for generationId: ${generationId} was not found at ${filePath}`,
-        },
-      ],
-    };
+    return errorResult(`Audio file for generationId: ${generationId} was not found at ${filePath}`)
   }
 
   try {
     await playAudioFile(filePath);
   } catch (e) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error playing audio for generationId: ${generationId}: ${e}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Error playing audio for generationId: ${generationId}: ${e}`)
   }
   return playPreviousAudioSuccess(generationId, filePath);
 };
@@ -311,26 +307,13 @@ export const handleListVoices = async ({
     });
     log(`Voices: ${JSON.stringify(voices, null, 2)}`);
     return {
-      content: [
-        {
-          type: "text",
-          text: `Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`,
-        },
-      ],
+      content: [message(`Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`)]
     };
   } catch (error) {
     log(
       `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Error listing voices: ${error instanceof Error ? error.message : String(error)}`)
   }
 };
 
@@ -344,22 +327,14 @@ export const handleDeleteVoice = async ({
     await hume.tts.voices.delete({ name });
     return {
       content: [
-        { type: "text", text: `Successfully deleted voice \"${name}\".` },
+        message(`Successfully deleted voice \"${name}\".`),
       ],
     };
   } catch (error) {
     log(
       `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Error deleting voice: ${error instanceof Error ? error.message : String(error)}`)
   }
 };
 
@@ -375,25 +350,14 @@ export const handleSaveVoice = async ({
     const response = await hume.tts.voices.create({ generationId, name });
     return {
       content: [
-        {
-          type: "text",
-          text: `Successfully saved voice \"${name}\" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`,
-        },
+        message(`Successfully saved voice \"${name}\" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`)
       ],
     };
   } catch (error) {
     log(
       `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(`Error saving voice: ${error instanceof Error ? error.message : String(error)}`)
   }
 };
 
