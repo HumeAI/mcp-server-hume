@@ -1,7 +1,7 @@
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { v4 as uuid } from 'uuid';
-import { DESCRIPTIONS, TTSSchema, playPreviousAudioSuccess, ttsSuccess } from '../../index.js';
+import { DESCRIPTIONS, TTSSchema, playPreviousAudioSuccess, ttsSuccess } from '../../server.js';
 import { ScenarioTool } from '../roleplay.js';
 
 // Common utility functions

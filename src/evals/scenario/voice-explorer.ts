@@ -1,4 +1,4 @@
-import { DESCRIPTIONS } from '../../index.js';
+import { DESCRIPTIONS } from '../../server.js';
 import { getHumeMcpTools } from '../utils.js';
 import { EvalScenario, commonInstructions } from './types.js';
 import { handler, mockDisplayResult, mockDisplayUse } from './helpers.js';

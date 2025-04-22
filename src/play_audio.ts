@@ -25,17 +25,17 @@ const findDefaultAudioPlayer_ = (): Command | null => {
   const commonPlayers: Command[] = isWindows
     ? [
         {
-          cmd: 'powershell',
-          argsWithPath: (path) => ['-c', `"(New-Object Media.SoundPlayer '${path}').PlaySync()"`],
-          argsWithStdin: null,
-        },
-        {
           cmd: 'ffplay',
           argsWithPath: atEnd('-nodisp', '-autoexit'),
           argsWithStdin: ['-nodisp', '-autoexit', '-i', '-'],
         },
         { cmd: 'mpv', argsWithPath: atEnd('--no-video'), argsWithStdin: ['--no-video', '-'] },
         { cmd: 'mplayer', argsWithPath: atEnd(''), argsWithStdin: ['-'] },
+        {
+          cmd: 'powershell',
+          argsWithPath: (path) => ['-c', `"(New-Object Media.SoundPlayer '${path}').PlaySync()"`],
+          argsWithStdin: null,
+        },
       ]
     : [
         {
@@ -43,11 +43,11 @@ const findDefaultAudioPlayer_ = (): Command | null => {
           argsWithPath: atEnd('-nodisp', '-autoexit'),
           argsWithStdin: ['-nodisp', '-autoexit', '-i', '-'],
         },
-        { cmd: 'afplay', argsWithPath: atEnd(''), argsWithStdin: null },
         { cmd: 'mplayer', argsWithPath: atEnd(''), argsWithStdin: ['-'] },
         { cmd: 'mpv', argsWithPath: atEnd('--no-video'), argsWithStdin: ['--no-video', '-'] },
         { cmd: 'aplay', argsWithPath: atEnd(''), argsWithStdin: ['-'] },
         { cmd: 'play', argsWithPath: atEnd(''), argsWithStdin: ['-'] },
+        { cmd: 'afplay', argsWithPath: atEnd(''), argsWithStdin: null },
       ];
 
   for (const player of commonPlayers) {
@@ -63,11 +63,8 @@ const findDefaultAudioPlayer_ = (): Command | null => {
 
 export const playAudioFile = async (
   path: string,
-  customCommand: string | null
 ): Promise<unknown> => {
-  const command = ensureAudioPlayer(
-    customCommand ? parseCustomCommand(customCommand) : findDefaultAudioPlayer()
-  );
+  const command = ensureAudioPlayer(findDefaultAudioPlayer());
   const isWindows = process.platform === 'win32';
   const sanitizedPath = isWindows ? path.replace(/\\/g, '\\\\') : path;
 
@@ -92,7 +89,7 @@ export const parseCustomCommand = (command: string): Command => {
 const ensureAudioPlayer = (command: Command | null): Command => {
   if (!command) {
     throw new Error(
-      'No audio player found. Please install ffplay or specify a custom player with --play-command'
+      'No audio player found. Please install ffmpeg and make sure `ffplay` is in your path.'
     );
   }
   return command;
@@ -102,18 +99,27 @@ const ensureStdinSupport = (command: Command): Command & { argsWithStdin: string
   const { argsWithStdin } = command;
   if (!argsWithStdin) {
     throw new Error(
-      `The audio player does not support playing from stdin. Please specify a custom player with --play-command`
+      `The audio player does not support playing from stdin.`
     );
   }
   return { ...command, argsWithStdin };
 };
 
-export const withStdinAudioPlayer = async (
-  customCommand: string | null,
-  f: (writeAudio: (audioBuffer: Buffer) => void) => Promise<void>
-): Promise<void> => {
+export class AudioPlayerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AudioPlayerError';
+  }
+}
+
+export type AudioPlayer = {
+  sendAudio: (audioBuffer: Buffer) => void;
+  close: () => Promise<void>;
+};
+
+export const getStdinAudioPlayer = (): AudioPlayer => {
   const command = ensureStdinSupport(
-    ensureAudioPlayer(customCommand ? parseCustomCommand(customCommand) : findDefaultAudioPlayer())
+    ensureAudioPlayer(findDefaultAudioPlayer())
   );
 
   const proc = Bun.spawn([command.cmd, ...command.argsWithStdin], {
@@ -122,9 +128,16 @@ export const withStdinAudioPlayer = async (
     stdin: 'pipe',
   });
 
-  await f((audioBuffer: Buffer) => {
-    proc.stdin.write(audioBuffer);
-  });
-  proc.stdin.end();
-  await proc.exited;
+  return {
+    sendAudio: (audioBuffer: Buffer) => {
+      proc.stdin.write(audioBuffer);
+    },
+    close: async () => {
+      proc.stdin.end();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        throw new AudioPlayerError(`Audio player exited with code ${exitCode}`);
+      }
+    }
+  }
 };

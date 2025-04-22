@@ -1,5 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { DESCRIPTIONS, getHumeToolDefinitions } from '../index.js';
+import { DESCRIPTIONS, getHumeToolDefinitions } from '../server.js';
 import { ScenarioTool, TranscriptEntry } from './roleplay.js';
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
 

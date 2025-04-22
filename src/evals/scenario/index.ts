@@ -1,4 +1,4 @@
-import { DESCRIPTIONS } from '../../index.js';
+import { DESCRIPTIONS } from '../../server.js';
 import { EvalScenario } from './types.js';
 import { screenreaderScenario } from './screenreader.js';
 import { pickyScreenreaderScenario } from './picky-screenreader.js';

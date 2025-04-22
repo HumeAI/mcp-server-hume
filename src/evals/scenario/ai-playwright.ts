@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { DESCRIPTIONS } from '../../index.js';
+import { DESCRIPTIONS } from '../../server.js';
 import { getHumeMcpTools } from '../utils.js';
 import { EvalScenario, commonCriteria, commonInstructions, voiceDesignCriteria } from './types.js';
 import { getContent, handler, mockDisplayResult, mockDisplayUse } from './helpers.js';

@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { DESCRIPTIONS } from '../index.js';
+import { DESCRIPTIONS } from '../server.js';
 import { Roleplay, RoleplayResult } from './roleplay.js';
 import { scoreCriteria, ScoredCriterion } from './scorer.js';
 import { prettyTranscriptEntry } from './utils.js';
