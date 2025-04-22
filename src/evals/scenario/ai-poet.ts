@@ -37,7 +37,7 @@ export const aiPoetScenario = async (descriptions: typeof DESCRIPTIONS): Promise
       ...commonCriteria,
       ...voiceDesignCriteria,
       "speed_used_correctly": "The agent should specify the speed parameter when the user has expressed a preference for slower or faster speech. 0.5 is the slowest and 2.0 is the fastest. If the user has specified that specific text be slower, the agent should segment the text into utterances such that the speed multiplier does not apply to text outside the user's specification.",
-      "trailing_silence_used_correctly": "The agent should specify trailing_silence ONLY when the user has explicitly requested a pause. trailing_silence should be delimited in seconds. If the user has asked for a pause in a particular location in the text, utterances should be split at that location and the first utterance should have trailing_silence added. There should be no trailing_silence added to places where the user has not explicitly requested a pause.",
+      "trailing_silence_used_correctly": "The agent should specify trailing_silence when the user has indicated they desire a pause. trailing_silence should be delimited in seconds. If the user has asked for a pause in a particular location in the text, utterances should be split at that location and the first utterance should have trailing_silence added. There should be no trailing_silence added to places where the user has not expressed a desire for a pause",
     },
     maxTurns: 35
   };

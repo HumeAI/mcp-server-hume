@@ -12,31 +12,35 @@ import { FileHandle } from "fs/promises";
 // Tool descriptions
 export const DESCRIPTIONS = {
   TTS_TOOL:
-    `Generates expressive speech from text, saves an audio file to a temporary location, and plays it back through the user's speakers.
+    `Synthesizes speech from text.
     
 IMPORTANT GUIDELINES:
-  1. ALWAYS provide "continuationOf" equal to the generation id of the previous TTS tool call unless you explicitly intend to speak with a different voice or you are narrating an entirely new body of text.
-  2. By default, make smaller requests (1-2 paragraphs) and stop for feedback often for *performance* content, for example when designing new voices or working on a creative project. Use larger requests (3-5 paragraphs) and continue without feedback for *dictation* content, when the user wants simply ones to hear content read aloud for themselves.
-  3. When designing a new voice, provide "description" to match the users desired voice qualities (gender, accent, pitch, role, emotionality) and provide a "text" that also conveys the desired voice's style, emotion, and dialect. When designing a new voice, "text" need not be drawn from the source text the user ultimately wants spoken. Iterate based on user feedback.
-  `,
+  1. Break longer texts into shorter segments (no more than a paragraph per utterance)
+  2. For any segment after the first, ALWAYS use the \"continuationOf\" parameter with the generationId from the previous segment
+  3. Avoid asking for unnecessary confirmations before reading content the user has requested
+  4. Never play the same content multiple times unless specifically requested
+  5. Keep responses concise and avoid unnecessary verbosity
   
-  TTS_UTTERANCES: `Provide only a single utterance when designing a new voice. Break source text into multiple utterances when there is a need to provide "acting instructions" that vary across different parts of the text, or to insert "trailing_silence" within a text.`,
-  TTS_UTTERANCE_TEXT: `The input text to be synthesized into speech. Modify source text with punctuation or CAPITALS for emotional emphasis, when appropriate.
-
-  Remove unnecessary formatting symbols. Convert meaningful formatting -- like numbered lists -- into pronouncable markers like "first, second, third" -- when it is obvious how to do so. Best practice is to convert such text content into natural speech markers when it is obvious how to do so. Omit unpronouncable text such as large code snippets. Do not omit URLs, email addresses, and small code snippets like variable names, which can be pronounced. When omitting large blocks of unpronouncable content, such as code, best practice is to use a distinct voice (with a different TTS call) to speak a "placeholder" summarizing the omitted content in less than a sentence`,
+This tool is useful for:
+  a) Character design:
+    Gather desired voice qualities (gender, accent, pitch, role, emotionality) from the user. Create a sample utterance with an appropriate description. Generate variants with the 'tts' tool, get user feedback, and save preferred voices.
+      
+  b) Reading content:
+    For text reading, use incremental retrieval and playback in manageable chunks. Always use continuation for coherent speech across segments. Provide informative but concise descriptions for each utterance to achieve appropriate tone and style.`,
+  TTS_UTTERANCE_TEXT: "The input text to be synthesized into speech. Avoid including unpronounceable text such as code, formatting symbols, or emojis. Best practice is to convert such text content into natural speech markers when it is obvious how to do so. Also consider using placeholders that summarize the unpronounceable content.",
   TTS_UTTERANCE_DESCRIPTION:
-    `Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, emotion, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). Always include this field when designing a new voice. When an existing voice is specified with 'voiceName', this field constitutes 'acting instructions' and should be provided when requested to modulate the voice's tone, emotion, etc.`,
+    "Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). If a Voice is specified in the request, this description serves as acting instructions. If no Voice is specified, a new voice is generated based on this description.",
   TTS_VOICE_NAME:
     "The name of the voice from the voice library to use as the speaker for the text.",
   TTS_PROVIDER:
-    "Set this equal to HUME_AI when you wish to use a voice provided by Hume, and not among the custom voices saved to your voice library.",
-  TTS_UTTERANCE_SPEED: "Alters the speaking rate of the voice. Usually unnecessary, the model automatically chooses an appropriate speaking rate according to the text and \"description\". Provide only when the model's default is unsatisfactory. Values range from 0.5 (very slow) to 2.0 (very fast).",
-  TTS_UTTERANCE_TRAILING_SILENCE: "Manually adds silence (0-5 seconds) after an utterance. The model automatically inserts pauses where natural. Use this only when there is a desire to override the model's default pausing behavior.",
+    "Set this only when using `voiceName` to specify a voice provided by Hume.",
+  TTS_UTTERANCE_SPEED: "Controls speaking rate from 0.5 (half speed) to 2.0 (double speed). Use to adjust pacing based on content requirements or user preferences. Slower speeds (0.5-0.8) enhance comprehension of complex content, normal speeds (0.9-1.1) work for standard reading, and faster speeds (1.2-2.0) accelerate delivery of straightforward content.",
+  TTS_UTTERANCE_TRAILING_SILENCE: "Duration of silence (0-5 seconds) added after speech completion. Use to create natural pauses between sentences, paragraphs, or speakers. Small values (0.2-0.5s) create natural breathing pauses, medium values (0.5-1.5s) separate distinct thoughts, and larger values (2-5s) create dramatic or narrative breaks.",
   TTS_CONTINUATION:
-    "ALWAYS provide this field when continuing speech from a previous TTS call. This is important for both voice consistency and to make the prosody sound natural when continuing text.",
+    "REQUIRED for any segment after the first! The generationId of the prior TTS generation, ensuring consistent speech style and prosody across multiple requests. When synthesizing long text, break it into smaller chunks and always specify continuationOf for each chunk after the first to maintain voice consistency.",
   TTS_QUIET: "Whether to skip playing back the generated audio.",
   PLAY_PREVIOUS_AUDIO:
-    "Plays back previously generated audio by generationId. Since the TTS command already automatically plays generated audio. Use this tool only when explicitly requested to replay previous audio.",
+    "Plays back audio by generationId using ffplay. Only use when the user specifically requests to replay audio that was already generated.",
   LIST_VOICES: "Lists available voices.",
   LIST_VOICES_PROVIDER:
     "Set this to HUME_AI to see the preset voices provided by Hume, instead of the custom voices in your account.",

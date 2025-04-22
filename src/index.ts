@@ -3,6 +3,7 @@ import { createHumeServer, log, setLogFile } from "./server.js";
 import * as fs from "fs/promises";
 
 const main = async () => {
+  // Create server instance for the main app
   const server = createHumeServer();
 
   setLogFile(await fs.open("/tmp/mcp-server-hume.log", "a"));
