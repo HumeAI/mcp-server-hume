@@ -15,9 +15,9 @@ export const DESCRIPTIONS = {
     `Generates expressive speech from text, saves an audio file to a temporary location, and plays it back through the user's speakers.
     
 IMPORTANT GUIDELINES:
-  1. By default, make smaller requests (1-2 paragraphs) and stop for feedback often for *performance* content, for example when designing new voices or working on a creative project. Use larger requests (3-5 paragraphs) and continue without feedback for *dictation* content, when the user wants simply ones to hear content read aloud for themselves.
-  2. When designing a new voice, provide "description" to match the users desired voice qualities (gender, accent, pitch, role, emotionality) and provide a "text" that also conveys the desired voice's style, emotion, and dialect. When designing a new voice, "text" need not be drawn from the source text the user ultimately wants spoken. Iterate based on user feedback.
-  3. For all TTS requests after the first, ALWAYS use "continuationOf" for voice consistency unless there is a speaker switch or you are narrating an entirely new body of text.
+  1. ALWAYS provide "continuationOf" equal to the generation id of the previous TTS tool call unless you explicitly intend to speak with a different voice or you are narrating an entirely new body of text.
+  2. By default, make smaller requests (1-2 paragraphs) and stop for feedback often for *performance* content, for example when designing new voices or working on a creative project. Use larger requests (3-5 paragraphs) and continue without feedback for *dictation* content, when the user wants simply ones to hear content read aloud for themselves.
+  3. When designing a new voice, provide "description" to match the users desired voice qualities (gender, accent, pitch, role, emotionality) and provide a "text" that also conveys the desired voice's style, emotion, and dialect. When designing a new voice, "text" need not be drawn from the source text the user ultimately wants spoken. Iterate based on user feedback.
   `,
   
   TTS_UTTERANCES: `Provide only a single utterance when designing a new voice. Break source text into multiple utterances when there is a need to provide "acting instructions" that vary across different parts of the text, or to insert "trailing_silence" within a text.`,
@@ -33,7 +33,7 @@ IMPORTANT GUIDELINES:
   TTS_UTTERANCE_SPEED: "Alters the speaking rate of the voice. Usually unnecessary, the model automatically chooses an appropriate speaking rate according to the text and \"description\". Provide only when the model's default is unsatisfactory. Values range from 0.5 (very slow) to 2.0 (very fast).",
   TTS_UTTERANCE_TRAILING_SILENCE: "Manually adds silence (0-5 seconds) after an utterance. The model automatically inserts pauses where natural. Use this only when there is a desire to override the model's default pausing behavior.",
   TTS_CONTINUATION:
-    "Provide this field when continuing speech from a previous TTS call. This is important for both voice consistency and for to make the prosody sound natural when continuing the first audio from the previous audio.",
+    "ALWAYS provide this field when continuing speech from a previous TTS call. This is important for both voice consistency and to make the prosody sound natural when continuing text.",
   TTS_QUIET: "Whether to skip playing back the generated audio.",
   PLAY_PREVIOUS_AUDIO:
     "Plays back previously generated audio by generationId. Since the TTS command already automatically plays generated audio. Use this tool only when explicitly requested to replay previous audio.",
