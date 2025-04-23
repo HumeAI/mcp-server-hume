@@ -34,6 +34,21 @@ bun install
 ```bash
 # Run with your Hume API key
 HUME_API_KEY=your_key_here bun index.js
+
+# Run with custom working directory
+HUME_API_KEY=your_key_here WORKDIR=/path/to/custom/dir bun index.js
+
+# Or use command line options
+HUME_API_KEY=your_key_here bun index.js --workdir /path/to/custom/dir --claude-desktop-mode false
+```
+
+### Command Line Options
+
+```
+Options:
+  --workdir <path>           Set the working directory for audio files
+  --claude-desktop-mode      Enable Claude desktop mode (true/false)
+  --help, -h                 Show help message
 ```
 
 ### Available Tools
@@ -72,6 +87,8 @@ The project includes a [comprehensive evaluation framework](src/evals/README.md)
 ## Environment Variables
 
 - `HUME_API_KEY`: Your Hume AI API key (required)
+- `WORKDIR`: Working directory for audio files (default: OS temp directory + "/hume-tts")
+- `CLAUDE_DESKTOP_MODE`: Enable/disable Claude desktop mode (default: true, set to 'false' to disable)
 - `ANTHROPIC_API_KEY`: Required for running evaluations
 
 ## License

@@ -10,11 +10,20 @@ import { playAudioFile, getStdinAudioPlayer, AudioPlayer } from "./play_audio.js
 import { FileHandle } from "fs/promises";
 import { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 
-// TODO: make this a command-line flag
+// Configuration variables with defaults
 const INSTANT_MODE = true
-const CLAUDE_DESKTOP_MODE = process.env.CLAUDE_DESKTOP_MODE !== 'false'
+let CLAUDE_DESKTOP_MODE = process.env.CLAUDE_DESKTOP_MODE !== 'false'
+let WORKDIR = process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts");
 
-const WORKDIR = process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts");
+// Setter functions for configuration
+export const setWorkdir = (workdir: string) => {
+  WORKDIR = workdir;
+}
+
+export const setClaudeDesktopMode = (enabled: boolean) => {
+  CLAUDE_DESKTOP_MODE = enabled;
+}
+
 const ensureWorkdir = async () => {
   return fs.mkdir(WORKDIR, { recursive: true });
 }
