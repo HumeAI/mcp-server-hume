@@ -1,29 +1,22 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, RegisteredResource, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { HumeClient } from "hume";
 import type { Hume } from "hume"
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResult, ListResourcesResult, ReadResourceResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { playAudioFile, getStdinAudioPlayer, AudioPlayer } from "./play_audio.js";
 import { FileHandle } from "fs/promises";
+import { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 
 // TODO: make this a command-line flag
 const INSTANT_MODE = true
+const CLAUDE_DESKTOP_MODE = process.env.CLAUDE_DESKTOP_MODE !== 'false'
 
 const message = (text: string): CallToolResult['content'][number] => ({
   type: "text",
   text: JSON.stringify({ type: 'text', text }, null, 2),
-})
-
-const audioMessage = (generationId: string, base64: string): CallToolResult['content'][number] => ({
-  type: "resource",
-  resource: {
-    mimeType: "audio/wav",
-    uri: `hume-tts://${generationId}`,
-    blob: base64
-  },
 })
 
 const errorResult = (error: string): CallToolResult => ({
@@ -79,8 +72,34 @@ const truncate = (str: string, maxLength: number) => {
   return str.substring(0, maxLength) + "...";
 };
 
-// Global map to store file paths by generationId
-export const audioMap = new Map<string, string>();
+class State {
+  private audioByGenerationId: Map<string, string>;
+
+  constructor() {
+    this.audioByGenerationId = new Map<string, string>();
+  }
+
+  getAudioByGenerationId(generationId: string): string | null {
+    return this.audioByGenerationId.get(generationId) ?? null;
+  }
+
+  addAudio(generationId: string, filePath: string) {
+    this.audioByGenerationId.set(generationId, filePath);
+  }
+
+  getFilePaths(): string[] {
+    return Array.from(this.audioByGenerationId.values());
+  }
+
+  findGenerationIdByFilePath(filePath: string): string | null {
+    for (const [generationId, path] of this.audioByGenerationId.entries()) {
+      if (path === filePath) {
+        return generationId;
+      }
+    }
+    return null;
+  }
+}
 
 let logFile: fs.FileHandle;
 export const setLogFile = (file: fs.FileHandle) => {
@@ -136,19 +155,37 @@ export const TTSSchema = (descriptions: typeof DESCRIPTIONS) =>
   z.object(ttsArgs(descriptions));
 export type TTSCall = z.infer<ReturnType<typeof TTSSchema>>;
 
-export const ttsSuccess = (generationIdToAudio: Map<string, Buffer>, text: string) => ({
-  content: [
-    message(`Created audio for text: "${truncate(text, 50)}", generation ids: ${[...generationIdToAudio
-      .keys().map((g) => {
-        const filePath = audioMap.get(g);
-        return `${g} (file: ${filePath})`;
-      })]
-      .join(", ")}`),
-    ...generationIdToAudio.entries().map(([generationId, buf]: [string, Buffer]) => audioMessage(generationId, buf.toString('base64')))
-  ]
-});
+const textAudioMessage = (text: string, filePath: string): CallToolResult['content'][number] => ({
+  type: "text",
+  text: `Wrote audio file ${filePath} for text: "${truncate(text, 50)}"`,
+})
 
-export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
+const embeddedAudioMessage = (base64: string): CallToolResult['content'][number] => ({
+  type: "audio",
+  mimeType: "audio/wav",
+  data: base64
+})
+
+export const ttsSuccess = (state: State, generationIdToAudio: Map<string, Buffer>, sourceText: string): CallToolResult => {
+  const messages: IteratorObject<{
+    text: CallToolResult['content'][number],
+    embedded: CallToolResult['content'][number],
+  }> = generationIdToAudio.entries().map(([generationId, buf]) => {
+    const text = textAudioMessage(truncate(sourceText, 50), state.getAudioByGenerationId(generationId)!)
+    const embedded = embeddedAudioMessage(buf.toString('base64'))
+    return { text, embedded }
+  })
+  if (CLAUDE_DESKTOP_MODE) {
+    return {
+      content: [...messages.map(({ text }) => text)]
+    }
+  }
+  return {
+    content: [...messages.flatMap(({ text, embedded }) => [text, embedded])]
+  }
+};
+
+export const handleTts = (state: State) => async (args: TTSCall): Promise<CallToolResult> => {
   const {
     continuationOf,
     voiceName,
@@ -211,7 +248,7 @@ export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
       log(`Writing to ${filePath}...`);
       fileHandle = await fs.open(filePath, "w");
       files.set(generationId, fileHandle);
-      audioMap.set(generationId, filePath);
+      state.addAudio(generationId, filePath);
     } else {
       fileHandle = files.get(generationId);
     }
@@ -253,7 +290,7 @@ export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
   await Promise.all(Array.from(files.values()).map((file) => file.close()));
   await audioPlayer.close()
 
-  return ttsSuccess(fileAudioData, text);
+  return ttsSuccess(state, fileAudioData, text);
 };
 
 export const playPreviousAudioSuccess = (
@@ -264,17 +301,15 @@ export const playPreviousAudioSuccess = (
     message(`Played audio for generationId: ${generationId}, file: ${filePath}`)
   ],
 });
-export const handlePlayPreviousAudio = async ({
+export const handlePlayPreviousAudio = (state: State) => async ({
   generationId,
 }: {
   generationId: string;
 }): Promise<CallToolResult> => {
-  const filePaths = audioMap.get(generationId);
-  if (!filePaths) {
+  const filePath = state.getAudioByGenerationId(generationId);
+  if (!filePath) {
     return errorResult(`No audio found for generationId: ${generationId}`)
   }
-
-  const filePath = filePaths[0];
   try {
     await fs.access(filePath);
   } catch {
@@ -363,8 +398,31 @@ export const handleSaveVoice = async ({
 };
 
 export const setup = (server: McpServer, descriptions: typeof DESCRIPTIONS) => {
-  // Register TTS tool with expanded options
-  server.tool("tts", descriptions.TTS_TOOL, ttsArgs(descriptions), handleTts);
+  const getResource = (state: State) => async (uri: string): Promise<ReadResourceResult> => {
+    const filePath = uri.replace("file://", "");
+    const buf = Buffer.from(await fs.readFile(filePath));
+    return {
+      contents: [{
+        uri,
+        mimeType: 'audio/wav',
+        blob: buf.toString('base64')
+      }]
+    }
+  }
+  const state = new State()
+  server.resource("tts audio", new ResourceTemplate("file://{filePath}", {
+    list: (): ListResourcesResult => {
+      return {
+        resources: state.getFilePaths().map((filePath) => ({
+          name: `audio/${filePath}`,
+          uri: `file://${filePath}`,
+        })),
+      }
+    }
+  }), (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
+    return getResource(state)(variables['filepath'] as string)
+  })
+  server.tool("tts", descriptions.TTS_TOOL, ttsArgs(descriptions), handleTts(state));
 
   server.tool(
     "play_previous_audio",
@@ -374,7 +432,7 @@ export const setup = (server: McpServer, descriptions: typeof DESCRIPTIONS) => {
         .string()
         .describe("The generationId of the audio to play"),
     },
-    handlePlayPreviousAudio,
+    handlePlayPreviousAudio(state),
   );
 
   server.tool(
@@ -447,6 +505,7 @@ export const getHumeToolDefinitions = async (
   });
 
   setup(server, descriptions);
+  server.sendResourceListChanged()
 
   return (
     await (server.server as any)._requestHandlers.get("tools/list")({
