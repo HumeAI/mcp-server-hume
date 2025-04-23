@@ -10,35 +10,6 @@ import { playAudioFile, getStdinAudioPlayer, AudioPlayer } from "./play_audio.js
 import { FileHandle } from "fs/promises";
 import { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 
-// Configuration variables with defaults
-const INSTANT_MODE = true
-let CLAUDE_DESKTOP_MODE = process.env.CLAUDE_DESKTOP_MODE !== 'false'
-let WORKDIR = process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts");
-
-// Setter functions for configuration
-export const setWorkdir = (workdir: string) => {
-  WORKDIR = workdir;
-}
-
-export const setClaudeDesktopMode = (enabled: boolean) => {
-  CLAUDE_DESKTOP_MODE = enabled;
-}
-
-const ensureWorkdir = async () => {
-  return fs.mkdir(WORKDIR, { recursive: true });
-}
-
-const message = (text: string): CallToolResult['content'][number] => ({
-  type: "text",
-  text: JSON.stringify({ type: 'text', text }, null, 2),
-})
-
-const errorResult = (error: string): CallToolResult => ({
-  content: [{
-    type: "text",
-    text: JSON.stringify({ type: 'error', error }, null, 2),
-  }], isError: true
-})
 // Tool descriptions
 export const DESCRIPTIONS = {
   TTS_TOOL:
@@ -79,84 +50,6 @@ IMPORTANT GUIDELINES:
     "The name to assign to the saved voice. This name can be used in voiceName parameter in future TTS requests.",
 };
 
-const truncate = (str: string, maxLength: number) => {
-  if (str.length <= maxLength) {
-    return str;
-  }
-  return str.substring(0, maxLength) + "...";
-};
-
-class AudioRecord {
-  private text: string;
-  private generationId: string;
-  constructor(
-    text: string,
-    generationId: string,
-  ) {
-    this.text = text;
-    this.generationId = generationId;
-  }
-  pretty() {
-    return `Audio("${truncate(this.text, 50)}")`;
-  }
-  filePath() {
-    return path.join(WORKDIR, `${this.generationId}.wav`);
-  }
-  uri() {
-    return `file://${this.filePath()}`;
-  }
-}
-
-class State {
-  private _byGenerationId = new Map<string, AudioRecord>();
-  private _byFilePath = new Map<string, AudioRecord>();
-
-  findByGenerationId(generationId: string): AudioRecord | null {
-    return this._byGenerationId.get(generationId) ?? null;
-  }
-
-  addAudio(text: string, generationId: string): AudioRecord {
-    const record = new AudioRecord(text, generationId)
-    this._byGenerationId.set(generationId, record);
-    this._byFilePath.set(record.filePath(), record);
-    return record
-  }
-
-  list(): {name: string, uri: string}[] {
-    return Array.from(this._byFilePath.values()).map((record) => ({
-      name: record.pretty(),
-      uri: record.uri(),
-    }));
-  }
-
-  findByFilePath(filePath: string): AudioRecord | null {
-    return this._byFilePath.get(filePath) ?? null;
-  }
-  findByUri(uri: string): AudioRecord | null {
-    const filePath = uri.replace("file://", "");
-    return this.findByFilePath(filePath);
-  }
-}
-
-let logFile: fs.FileHandle;
-export const setLogFile = (file: fs.FileHandle) => {
-  logFile = file;
-
-
-  process.on("exit", async () => {
-    await logFile?.close();
-  });
-}
-
-export const log = (...args: any[]) => {
-  console.error(...args);
-  logFile?.write(JSON.stringify(args) + "\n");
-};
-
-const hume = new HumeClient({
-  apiKey: process.env.HUME_API_KEY!,
-});
-
 export const ttsArgs = (descriptions: typeof DESCRIPTIONS) => ({
   utterances: z.array(
     z.object({
@@ -192,357 +85,509 @@ export const TTSSchema = (descriptions: typeof DESCRIPTIONS) =>
   z.object(ttsArgs(descriptions));
 export type TTSCall = z.infer<ReturnType<typeof TTSSchema>>;
 
-const textAudioMessage = (record: AudioRecord): CallToolResult['content'][number] => ({
-  type: "text",
-  text: `Wrote ${record.pretty()} to ${record.filePath()}`,
-})
+class AudioRecord {
+  private text: string;
+  private generationId: string;
+  private workdir: string;
 
-const embeddedAudioMessage = (base64: string): CallToolResult['content'][number] => ({
-  type: "audio",
-  mimeType: "audio/wav",
-  data: base64
-})
+  constructor(
+    text: string,
+    generationId: string,
+    workdir: string,
+  ) {
+    this.text = text;
+    this.generationId = generationId;
+    this.workdir = workdir;
+  }
 
-export const ttsSuccess = (state: State, generationIdToAudio: Map<string, Buffer>): CallToolResult => {
-  const messages: IteratorObject<{
-    text: CallToolResult['content'][number],
-    embedded: CallToolResult['content'][number],
-  }> = generationIdToAudio.entries().map(([generationId, buf]) => {
-    const text = textAudioMessage(state.findByGenerationId(generationId)!)
-    const embedded = embeddedAudioMessage(buf.toString('base64'))
-    return { text, embedded }
-  })
-  if (CLAUDE_DESKTOP_MODE) {
-    return {
-      content: [...messages.map(({ text }) => text)]
+  pretty(maxLength: number = 50) {
+    return `Audio("${this.truncate(this.text, maxLength)}")`;
+  }
+
+  private truncate(str: string, maxLength: number) {
+    if (str.length <= maxLength) {
+      return str;
     }
+    return str.substring(0, maxLength) + "...";
   }
-  return {
-    content: [...messages.flatMap(({ text, embedded }) => [text, embedded])]
-  }
-};
 
-export const handleTts = (state: State) => async (args: TTSCall): Promise<CallToolResult> => {
-  const {
-    continuationOf,
-    voiceName,
-    quiet,
-    utterances: utterancesInput,
-  } = args
-  const utterances: Array<Hume.tts.PostedUtterance> = [];
-  for (const utt of utterancesInput) {
-    const utterance: Hume.tts.PostedUtterance = {
-      text: utt.text,
-    };
-    if (utt.speed) {
-      utterance.speed = utt.speed
+  filePath() {
+    return path.join(this.workdir, `${this.generationId}.wav`);
+  }
+
+  uri() {
+    return `file://${this.filePath()}`;
+  }
+}
+
+class State {
+  private _byGenerationId = new Map<string, AudioRecord>();
+  private _byFilePath = new Map<string, AudioRecord>();
+  private readonly workdir: string;
+
+  constructor(workdir: string) {
+    this.workdir = workdir;
+  }
+
+  findByGenerationId(generationId: string): AudioRecord | null {
+    return this._byGenerationId.get(generationId) ?? null;
+  }
+
+  addAudio(text: string, generationId: string): AudioRecord {
+    const record = new AudioRecord(text, generationId, this.workdir);
+    this._byGenerationId.set(generationId, record);
+    this._byFilePath.set(record.filePath(), record);
+    return record;
+  }
+
+  list(): {name: string, uri: string}[] {
+    return Array.from(this._byFilePath.values()).map((record) => ({
+      name: record.pretty(),
+      uri: record.uri(),
+    }));
+  }
+
+  findByFilePath(filePath: string): AudioRecord | null {
+    return this._byFilePath.get(filePath) ?? null;
+  }
+
+  findByUri(uri: string): AudioRecord | null {
+    const filePath = uri.replace("file://", "");
+    return this.findByFilePath(filePath);
+  }
+}
+
+export class HumeServer {
+  // Immutable configuration
+  private readonly instantMode: boolean;
+  private readonly claudeDesktopMode: boolean;
+  private readonly workdir: string;
+  private readonly humeClient: HumeClient;
+  private readonly logFile?: FileHandle;
+  
+  // State
+  private readonly state: State;
+  private readonly server: McpServer;
+  
+  constructor({
+    instantMode,
+    claudeDesktopMode,
+    workdir,
+    logFile,
+    humeApiKey
+  }: {
+    instantMode: boolean;
+    claudeDesktopMode: boolean;
+    workdir: string;
+    logFile?: FileHandle;
+    humeApiKey: string;
+  }) {
+    this.instantMode = instantMode;
+    this.claudeDesktopMode = claudeDesktopMode;
+    this.workdir = workdir;
+    this.logFile = logFile;
+    
+    if (this.logFile) {
+      process.on("exit", async () => {
+        await this.logFile?.close();
+      });
     }
-    if (utt.trailingSilence) {
-      utterance.trailingSilence = utt.trailingSilence
-    }
-    if (utt.speed) {
-      utterance.speed = utt.speed
-    }
-    if (utt.description) {
-      utterance.description = utt.description
-    }
-    if (voiceName) {
-      utterance.voice = { name: voiceName }
-    }
-    utterances.push(utterance);
-  }
-
-  const context: Hume.tts.PostedContextWithGenerationId | null = continuationOf
-    ? { generationId: continuationOf }
-    : null;
-  const request: Hume.tts.PostedTts = {
-    utterances,
-    stripHeaders: true,
-    instantMode: INSTANT_MODE && !voiceName && !continuationOf,
-  };
-  if (context) {
-    request.context = context;
-  }
-
-  const text = utterances.map((u) => u.text).join(" ");
-  log(
-    `Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
-  );
-
-  await ensureWorkdir();
-
-  const chunks: Array<{ audio: string; generationId: string }> = [];
-  const files: Map<string, FileHandle> = new Map();
-  const fileAudioData: Map<string, Buffer> = new Map();
-
-  const filePathOf = (generationId: string) =>
-    path.join(WORKDIR, `${generationId}.wav`);
-  const writeToFile = async (generationId: string, audioBuffer: Buffer) => {
-    let fileHandle;
-    if (!files.has(generationId)) {
-      const filePath = filePathOf(generationId);
-      log(`Writing to ${filePath}...`);
-      fileHandle = await fs.open(filePath, "w");
-      files.set(generationId, fileHandle);
-      state.addAudio(text, generationId);
-    } else {
-      fileHandle = files.get(generationId);
-    }
-    await fileHandle!.write(audioBuffer);
-  };
-
-  const audioPlayer: AudioPlayer = quiet ? {
-    sendAudio: () => { },
-    close: async () => { },
-  } : getStdinAudioPlayer()
-  let stream: Awaited<ReturnType<typeof hume.tts.synthesizeJsonStreaming>>
-
-  try {
-    log(JSON.stringify(request, null, 2))
-    stream = await hume.tts.synthesizeJsonStreaming(request)
-  } catch (e) {
-    log(`Error synthesizing speech: ${e}`);
-    log(`${JSON.stringify(request)}`);
-    return errorResult(`Error synthesizing speech: ${e} + ${(e as any).trace}`)
-  }
-  for await (const audioChunk of stream) {
-    log(
-      `Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => (k === "audio" ? "[Audio Data]" : undefined))}`,
-    );
-    chunks.push(audioChunk);
-    const { audio, generationId } = audioChunk;
-
-    const buf = Buffer.from(audio, "base64");
-    audioPlayer.sendAudio(buf)
-    if (!fileAudioData.has(generationId)) {
-      fileAudioData.set(generationId, buf);
-    } else {
-      const currentBuffer = fileAudioData.get(generationId);
-      const newBuffer = Buffer.concat([currentBuffer || Buffer.alloc(0), buf]);
-      fileAudioData.set(generationId, newBuffer);
-    }
-    await writeToFile(generationId, buf)
-  }
-  await Promise.all(Array.from(files.values()).map((file) => file.close()));
-  await audioPlayer.close()
-
-  return ttsSuccess(state, fileAudioData);
-};
-
-export const playPreviousAudioSuccess = (
-  generationId: string,
-  audioRecord: AudioRecord,
-): CallToolResult => ({
-  content: [
-    message(`Played audio for generationId: ${generationId}, file: ${audioRecord.filePath()}`),
-  ],
-});
-export const handlePlayPreviousAudio = (state: State) => async ({
-  generationId,
-}: {
-  generationId: string;
-}): Promise<CallToolResult> => {
-  const audioRecord = state.findByGenerationId(generationId);
-  if (!audioRecord) {
-    return errorResult(`No audio found for generationId: ${generationId}`)
-  }
-  try {
-    await fs.access(audioRecord.filePath());
-  } catch {
-    log(`File not found: ${audioRecord}`);
-    return errorResult(`Audio file for generationId: ${generationId} was not found at ${audioRecord}`)
-  }
-
-  try {
-    await playAudioFile(audioRecord.filePath());
-  } catch (e) {
-    return errorResult(`Error playing audio for generationId: ${generationId}: ${e}`)
-  }
-  return playPreviousAudioSuccess(generationId, audioRecord);
-};
-
-export const handleListVoices = async ({
-  provider,
-  pageNumber,
-  pageSize,
-}: {
-  provider: "HUME_AI" | "CUSTOM_VOICE";
-  pageNumber: number;
-  pageSize: number;
-}): Promise<CallToolResult> => {
-  try {
-    log(`Listing voices for provider: ${provider}`);
-    const voices = await hume.tts.voices.list({
-      provider,
-      pageNumber,
-      pageSize,
+    
+    // Initialize client
+    this.humeClient = new HumeClient({ apiKey: humeApiKey });
+    
+    // Initialize state
+    this.state = new State(this.workdir);
+    
+    // Initialize server
+    this.server = new McpServer({
+      name: "hume",
+      version: "0.1.0",
     });
-    log(`Voices: ${JSON.stringify(voices, null, 2)}`);
-    return {
-      content: [message(`Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`)]
-    };
-  } catch (error) {
-    log(
-      `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return errorResult(`Error listing voices: ${error instanceof Error ? error.message : String(error)}`)
+    
+    // Configure server with tools and resources
+    this.setupServer();
   }
-};
-
-export const handleDeleteVoice = async ({
-  name,
-}: {
-  name: string;
-}): Promise<CallToolResult> => {
-  try {
-    log(`Deleting voice with name: ${name}`);
-    await hume.tts.voices.delete({ name });
-    return {
-      content: [
-        message(`Successfully deleted voice \"${name}\".`),
-      ],
-    };
-  } catch (error) {
-    log(
-      `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return errorResult(`Error deleting voice: ${error instanceof Error ? error.message : String(error)}`)
+  
+  private log(...args: any[]): void {
+    console.error(...args);
+    this.logFile?.write(JSON.stringify(args) + "\n");
   }
-};
-
-export const handleSaveVoice = async ({
-  generationId,
-  name,
-}: {
-  generationId: string;
-  name: string;
-}): Promise<CallToolResult> => {
-  try {
-    log(`Saving voice with generationId: ${generationId} as name: \"${name}\"`);
-    const response = await hume.tts.voices.create({ generationId, name });
+  
+  private message(text: string): CallToolResult['content'][number] {
     return {
-      content: [
-        message(`Successfully saved voice \"${name}\" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`)
-      ],
+      type: "text",
+      text: JSON.stringify({ type: 'text', text }, null, 2),
     };
-  } catch (error) {
-    log(
-      `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return errorResult(`Error saving voice: ${error instanceof Error ? error.message : String(error)}`)
   }
-};
-
-export const setup = (server: McpServer, descriptions: typeof DESCRIPTIONS) => {
-  const state = new State()
-  server.resource("tts audio", new ResourceTemplate(`file://${WORKDIR}/{generation_id}.wav`, {
-    list: (): ListResourcesResult => {
+  
+  private errorResult(error: string): CallToolResult {
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ type: 'error', error }, null, 2),
+      }], 
+      isError: true
+    };
+  }
+  
+  private async ensureWorkdir(): Promise<void> {
+    await fs.mkdir(this.workdir, { recursive: true });
+  }
+  
+  private textAudioMessage(record: AudioRecord): CallToolResult['content'][number] {
+    return {
+      type: "text",
+      text: `Wrote ${record.pretty()} to ${record.filePath()}`,
+    };
+  }
+  
+  private embeddedAudioMessage(base64: string): CallToolResult['content'][number] {
+    return {
+      type: "audio",
+      mimeType: "audio/wav",
+      data: base64
+    };
+  }
+  
+  private ttsSuccess(generationIdToAudio: Map<string, Buffer>): CallToolResult {
+    const messages: IteratorObject<{
+      text: CallToolResult['content'][number],
+      embedded: CallToolResult['content'][number],
+    }> = generationIdToAudio.entries().map(([generationId, buf]) => {
+      const text = this.textAudioMessage(this.state.findByGenerationId(generationId)!);
+      const embedded = this.embeddedAudioMessage(buf.toString('base64'));
+      return { text, embedded };
+    });
+    
+    if (this.claudeDesktopMode) {
       return {
-        resources: state.list()
-      }
+        content: [...messages.map(({ text }) => text)]
+      };
     }
-  }), async (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
-    const record = state.findByGenerationId(variables['generation_id'] as string)
-    if (!record) {
-      throw new Error(`No audio found for generationId: ${variables['generation_id']}`)
-    }
-    const buf = Buffer.from(await fs.readFile(record.filePath()))
+    
     return {
-      contents: [{
-        uri: record.uri(),
-        mimeType: 'audio/wav',
-        blob: buf.toString('base64')
-      }]
+      content: [...messages.flatMap(({ text, embedded }) => [text, embedded])]
+    };
+  }
+  
+  private async handleTts(args: TTSCall): Promise<CallToolResult> {
+    const {
+      continuationOf,
+      voiceName,
+      quiet,
+      utterances: utterancesInput,
+    } = args;
+    
+    const utterances: Array<Hume.tts.PostedUtterance> = [];
+    for (const utt of utterancesInput) {
+      const utterance: Hume.tts.PostedUtterance = {
+        text: utt.text,
+      };
+      if (utt.speed) {
+        utterance.speed = utt.speed;
+      }
+      if (utt.trailingSilence) {
+        utterance.trailingSilence = utt.trailingSilence;
+      }
+      if (utt.speed) {
+        utterance.speed = utt.speed;
+      }
+      if (utt.description) {
+        utterance.description = utt.description;
+      }
+      if (voiceName) {
+        utterance.voice = { name: voiceName };
+      }
+      utterances.push(utterance);
     }
-  })
-  server.tool("tts", descriptions.TTS_TOOL, ttsArgs(descriptions), handleTts(state));
 
-  server.tool(
-    "play_previous_audio",
-    descriptions.PLAY_PREVIOUS_AUDIO,
-    {
-      generationId: z
-        .string()
-        .describe("The generationId of the audio to play"),
-    },
-    handlePlayPreviousAudio(state),
-  );
+    const context: Hume.tts.PostedContextWithGenerationId | null = continuationOf
+      ? { generationId: continuationOf }
+      : null;
+      
+    const request: Hume.tts.PostedTts = {
+      utterances,
+      stripHeaders: true,
+      instantMode: this.instantMode && !voiceName && !continuationOf,
+    };
+    
+    if (context) {
+      request.context = context;
+    }
 
-  server.tool(
-    "list_voices",
-    descriptions.LIST_VOICES,
-    {
-      provider: z
-        .enum(["HUME_AI", "CUSTOM_VOICE"])
-        .default("CUSTOM_VOICE")
-        .describe(descriptions.LIST_VOICES_PROVIDER),
-      pageNumber: z
-        .number()
-        .optional()
-        .default(0)
-        .describe("The page number to retrieve."),
-      pageSize: z
-        .number()
-        .optional()
-        .default(100)
-        .describe("The number of voices to retrieve per page."),
-    },
-    handleListVoices,
-  );
+    const text = utterances.map((u) => u.text).join(" ");
+    this.log(
+      `Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
+    );
 
-  server.tool(
-    "delete_voice",
-    descriptions.DELETE_VOICE,
-    {
-      name: z.string().describe("The name of the voice to delete."),
-    },
-    handleDeleteVoice,
-  );
+    await this.ensureWorkdir();
 
-  // Add save_voice tool to save a voice to the Voice Library
-  server.tool(
-    "save_voice",
-    descriptions.SAVE_VOICE,
-    {
-      generationId: z.string().describe(descriptions.SAVE_VOICE_GENERATION_ID),
-      name: z.string().describe(descriptions.SAVE_VOICE_NAME),
-    },
-    handleSaveVoice,
-  );
+    const chunks: Array<{ audio: string; generationId: string }> = [];
+    const files: Map<string, FileHandle> = new Map();
+    const fileAudioData: Map<string, Buffer> = new Map();
 
-  return server;
-};
+    const filePathOf = (generationId: string) =>
+      path.join(this.workdir, `${generationId}.wav`);
+      
+    const writeToFile = async (generationId: string, audioBuffer: Buffer) => {
+      let fileHandle;
+      if (!files.has(generationId)) {
+        const filePath = filePathOf(generationId);
+        this.log(`Writing to ${filePath}...`);
+        fileHandle = await fs.open(filePath, "w");
+        files.set(generationId, fileHandle);
+        this.state.addAudio(text, generationId);
+      } else {
+        fileHandle = files.get(generationId);
+      }
+      await fileHandle!.write(audioBuffer);
+    };
 
-// Export function to create and configure the server
-export const createHumeServer = () => {
-  // Create server instance
-  const server = new McpServer({
-    name: "hume",
-    version: "0.1.0",
-  });
+    const audioPlayer: AudioPlayer = quiet ? {
+      sendAudio: () => { },
+      close: async () => { },
+    } : getStdinAudioPlayer();
+    
+    let stream: Awaited<ReturnType<typeof this.humeClient.tts.synthesizeJsonStreaming>>;
 
-  // Configure all tools
-  setup(server, DESCRIPTIONS);
+    try {
+      this.log(JSON.stringify(request, null, 2));
+      stream = await this.humeClient.tts.synthesizeJsonStreaming(request);
+    } catch (e) {
+      this.log(`Error synthesizing speech: ${e}`);
+      this.log(`${JSON.stringify(request)}`);
+      return this.errorResult(`Error synthesizing speech: ${e} + ${(e as any).trace}`);
+    }
+    
+    for await (const audioChunk of stream) {
+      this.log(
+        `Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => (k === "audio" ? "[Audio Data]" : undefined))}`,
+      );
+      chunks.push(audioChunk);
+      const { audio, generationId } = audioChunk;
 
-  return server;
-};
+      const buf = Buffer.from(audio, "base64");
+      audioPlayer.sendAudio(buf);
+      if (!fileAudioData.has(generationId)) {
+        fileAudioData.set(generationId, buf);
+      } else {
+        const currentBuffer = fileAudioData.get(generationId);
+        const newBuffer = Buffer.concat([currentBuffer || Buffer.alloc(0), buf]);
+        fileAudioData.set(generationId, newBuffer);
+      }
+      await writeToFile(generationId, buf);
+    }
+    
+    await Promise.all(Array.from(files.values()).map((file) => file.close()));
+    await audioPlayer.close();
 
-// Export function to get tool definitions without creating a full server
-export const getHumeToolDefinitions = async (
-  descriptions: typeof DESCRIPTIONS,
-): Promise<Array<Tool>> => {
-  // Create a temporary server to extract tool definitions
-  const server = new McpServer({
-    name: "hume-tools",
-    version: "1.0.0",
-  });
+    return this.ttsSuccess(fileAudioData);
+  }
+  
+  private playPreviousAudioSuccess(
+    generationId: string,
+    audioRecord: AudioRecord,
+  ): CallToolResult {
+    return {
+      content: [
+        this.message(`Played audio for generationId: ${generationId}, file: ${audioRecord.filePath()}`),
+      ],
+    };
+  }
+  
+  private async handlePlayPreviousAudio({
+    generationId,
+  }: {
+    generationId: string;
+  }): Promise<CallToolResult> {
+    const audioRecord = this.state.findByGenerationId(generationId);
+    if (!audioRecord) {
+      return this.errorResult(`No audio found for generationId: ${generationId}`);
+    }
+    
+    try {
+      await fs.access(audioRecord.filePath());
+    } catch {
+      this.log(`File not found: ${audioRecord}`);
+      return this.errorResult(`Audio file for generationId: ${generationId} was not found at ${audioRecord}`);
+    }
 
-  setup(server, descriptions);
-  server.sendResourceListChanged()
+    try {
+      await playAudioFile(audioRecord.filePath());
+    } catch (e) {
+      return this.errorResult(`Error playing audio for generationId: ${generationId}: ${e}`);
+    }
+    
+    return this.playPreviousAudioSuccess(generationId, audioRecord);
+  }
+  
+  private async handleListVoices({
+    provider,
+    pageNumber,
+    pageSize,
+  }: {
+    provider: "HUME_AI" | "CUSTOM_VOICE";
+    pageNumber: number;
+    pageSize: number;
+  }): Promise<CallToolResult> {
+    try {
+      this.log(`Listing voices for provider: ${provider}`);
+      const voices = await this.humeClient.tts.voices.list({
+        provider,
+        pageNumber,
+        pageSize,
+      });
+      
+      this.log(`Voices: ${JSON.stringify(voices, null, 2)}`);
+      return {
+        content: [this.message(`Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`)]
+      };
+    } catch (error) {
+      this.log(
+        `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return this.errorResult(`Error listing voices: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  private async handleDeleteVoice({
+    name,
+  }: {
+    name: string;
+  }): Promise<CallToolResult> {
+    try {
+      this.log(`Deleting voice with name: ${name}`);
+      await this.humeClient.tts.voices.delete({ name });
+      return {
+        content: [
+          this.message(`Successfully deleted voice \"${name}\".`),
+        ],
+      };
+    } catch (error) {
+      this.log(
+        `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return this.errorResult(`Error deleting voice: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  private async handleSaveVoice({
+    generationId,
+    name,
+  }: {
+    generationId: string;
+    name: string;
+  }): Promise<CallToolResult> {
+    try {
+      this.log(`Saving voice with generationId: ${generationId} as name: \"${name}\"`);
+      const response = await this.humeClient.tts.voices.create({ generationId, name });
+      return {
+        content: [
+          this.message(`Successfully saved voice \"${name}\" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`)
+        ],
+      };
+    } catch (error) {
+      this.log(
+        `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return this.errorResult(`Error saving voice: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  private setupServer(): void {
+    this.server.resource("tts audio", new ResourceTemplate(`file://${this.workdir}/{generation_id}.wav`, {
+      list: (): ListResourcesResult => {
+        return {
+          resources: this.state.list()
+        };
+      }
+    }), async (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
+      const record = this.state.findByGenerationId(variables['generation_id'] as string);
+      if (!record) {
+        throw new Error(`No audio found for generationId: ${variables['generation_id']}`);
+      }
+      const buf = Buffer.from(await fs.readFile(record.filePath()));
+      return {
+        contents: [{
+          uri: record.uri(),
+          mimeType: 'audio/wav',
+          blob: buf.toString('base64')
+        }]
+      };
+    });
+    
+    this.server.tool(
+      "tts", 
+      DESCRIPTIONS.TTS_TOOL, 
+      ttsArgs(DESCRIPTIONS), 
+      this.handleTts.bind(this)
+    );
 
-  return (
-    await (server.server as any)._requestHandlers.get("tools/list")({
-      method: "tools/list",
-    })
-  ).tools as Array<Tool>;
-};
+    this.server.tool(
+      "play_previous_audio",
+      DESCRIPTIONS.PLAY_PREVIOUS_AUDIO,
+      {
+        generationId: z
+          .string()
+          .describe("The generationId of the audio to play"),
+      },
+      this.handlePlayPreviousAudio.bind(this),
+    );
+
+    this.server.tool(
+      "list_voices",
+      DESCRIPTIONS.LIST_VOICES,
+      {
+        provider: z
+          .enum(["HUME_AI", "CUSTOM_VOICE"])
+          .default("CUSTOM_VOICE")
+          .describe(DESCRIPTIONS.LIST_VOICES_PROVIDER),
+        pageNumber: z
+          .number()
+          .optional()
+          .default(0)
+          .describe("The page number to retrieve."),
+        pageSize: z
+          .number()
+          .optional()
+          .default(100)
+          .describe("The number of voices to retrieve per page."),
+      },
+      this.handleListVoices.bind(this),
+    );
+
+    this.server.tool(
+      "delete_voice",
+      DESCRIPTIONS.DELETE_VOICE,
+      {
+        name: z.string().describe("The name of the voice to delete."),
+      },
+      this.handleDeleteVoice.bind(this),
+    );
+
+    this.server.tool(
+      "save_voice",
+      DESCRIPTIONS.SAVE_VOICE,
+      {
+        generationId: z.string().describe(DESCRIPTIONS.SAVE_VOICE_GENERATION_ID),
+        name: z.string().describe(DESCRIPTIONS.SAVE_VOICE_NAME),
+      },
+      this.handleSaveVoice.bind(this),
+    );
+  }
+  
+  public getServer(): McpServer {
+    return this.server;
+  }
+  
+  public async getToolDefinitions(): Promise<Array<Tool>> {
+    this.server.sendResourceListChanged();
+    
+    return (
+      await (this.server.server as any)._requestHandlers.get("tools/list")({
+        method: "tools/list",
+      })
+    ).tools as Array<Tool>;
+  }
+}
