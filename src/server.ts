@@ -9,6 +9,8 @@ import { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { playAudioFile, getStdinAudioPlayer, AudioPlayer } from "./play_audio.js";
 import { FileHandle } from "fs/promises";
 
+// TODO: make this a command-line flag
+const INSTANT_MODE = true
 
 const message = (text: string): CallToolResult['content'][number] => ({
   type: "text",
@@ -183,7 +185,7 @@ export const handleTts = async (args: TTSCall): Promise<CallToolResult> => {
   const request: Hume.tts.PostedTts = {
     utterances,
     stripHeaders: true,
-    instantMode: true,
+    instantMode: INSTANT_MODE && !voiceName && !continuationOf,
   };
   if (context) {
     request.context = context;
