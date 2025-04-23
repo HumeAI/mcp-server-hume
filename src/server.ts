@@ -35,12 +35,11 @@ const errorResult = (error: string): CallToolResult => ({
 // Tool descriptions
 export const DESCRIPTIONS = {
   TTS_TOOL:
-    `Generates expressive speech from text, saves an audio file to a temporary location, and plays it back through the user's speakers.
+    `Generates expressive speech from text, saves a single audio file to a temporary location, and plays it back through the user's speakers.
     
 IMPORTANT GUIDELINES:
   1. ALWAYS provide "continuationOf" equal to the generation id of the previous TTS tool call unless you explicitly intend to speak with a different voice or you are narrating an entirely new body of text.
-  2. ALWAYS determine whether you are providing *performance* or *dictation*. When providing *performance* like, designing a new voice or working on a creative project such as an audiobook, podcast, or video dub, you should work in smaller batches and ALWAYS stop for human feedback after each request. It often takes multiple iteration to get the best output. When providing *dictation* content, such as when the user wants to hear content read aloud for themselves, you should provide larger requests (3-5 paragraphs) and continue without feedback.
-  2. By default, make smaller requests (1-2 paragraphs) and stop for feedback often for *performance* content, for example when designing new voices or working on a creative project. Use larger requests (3-5 paragraphs) and continue without feedback for *dictation* content, when the user wants simply ones to hear content read aloud for themselves.
+  2. ALWAYS determine whether you are providing *performance* or *dictation*. When providing *performance*, like designing a new voice or working on a creative project such as an audiobook, podcast, or video dub, you should work in smaller batches and ALWAYS stop for human feedback after each request. It often takes multiple iterations to get the best output. When providing *dictation* content, such as when the user wants to hear content read aloud for themselves, you should provide larger requests (3-5 paragraphs) and continue without feedback.
   3. When designing a new voice, provide "description" to match the users desired voice qualities (gender, accent, pitch, role, emotionality) and provide a "text" that also conveys the desired voice's style, emotion, and dialect. When designing a new voice, "text" need not be drawn from the source text the user ultimately wants spoken. Iterate based on user feedback.
   `,
 
