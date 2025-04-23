@@ -1,4 +1,4 @@
-import { McpServer, RegisteredResource, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { HumeClient } from "hume";
 import type { Hume } from "hume"
 import { z } from "zod";
@@ -13,6 +13,11 @@ import { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 // TODO: make this a command-line flag
 const INSTANT_MODE = true
 const CLAUDE_DESKTOP_MODE = process.env.CLAUDE_DESKTOP_MODE !== 'false'
+
+const WORKDIR = process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts");
+const ensureWorkdir = async () => {
+  return fs.mkdir(WORKDIR, { recursive: true });
+}
 
 const message = (text: string): CallToolResult['content'][number] => ({
   type: "text",
@@ -72,32 +77,55 @@ const truncate = (str: string, maxLength: number) => {
   return str.substring(0, maxLength) + "...";
 };
 
+class AudioRecord {
+  private text: string;
+  private generationId: string;
+  constructor(
+    text: string,
+    generationId: string,
+  ) {
+    this.text = text;
+    this.generationId = generationId;
+  }
+  pretty() {
+    return `Audio("${truncate(this.text, 50)}")`;
+  }
+  filePath() {
+    return path.join(WORKDIR, `${this.generationId}.wav`);
+  }
+  uri() {
+    return `file://${this.filePath()}`;
+  }
+}
+
 class State {
-  private audioByGenerationId: Map<string, string>;
+  private _byGenerationId = new Map<string, AudioRecord>();
+  private _byFilePath = new Map<string, AudioRecord>();
 
-  constructor() {
-    this.audioByGenerationId = new Map<string, string>();
+  findByGenerationId(generationId: string): AudioRecord | null {
+    return this._byGenerationId.get(generationId) ?? null;
   }
 
-  getAudioByGenerationId(generationId: string): string | null {
-    return this.audioByGenerationId.get(generationId) ?? null;
+  addAudio(text: string, generationId: string): AudioRecord {
+    const record = new AudioRecord(text, generationId)
+    this._byGenerationId.set(generationId, record);
+    this._byFilePath.set(record.filePath(), record);
+    return record
   }
 
-  addAudio(generationId: string, filePath: string) {
-    this.audioByGenerationId.set(generationId, filePath);
+  list(): {name: string, uri: string}[] {
+    return Array.from(this._byFilePath.values()).map((record) => ({
+      name: record.pretty(),
+      uri: record.uri(),
+    }));
   }
 
-  getFilePaths(): string[] {
-    return Array.from(this.audioByGenerationId.values());
+  findByFilePath(filePath: string): AudioRecord | null {
+    return this._byFilePath.get(filePath) ?? null;
   }
-
-  findGenerationIdByFilePath(filePath: string): string | null {
-    for (const [generationId, path] of this.audioByGenerationId.entries()) {
-      if (path === filePath) {
-        return generationId;
-      }
-    }
-    return null;
+  findByUri(uri: string): AudioRecord | null {
+    const filePath = uri.replace("file://", "");
+    return this.findByFilePath(filePath);
   }
 }
 
@@ -155,9 +183,9 @@ export const TTSSchema = (descriptions: typeof DESCRIPTIONS) =>
   z.object(ttsArgs(descriptions));
 export type TTSCall = z.infer<ReturnType<typeof TTSSchema>>;
 
-const textAudioMessage = (text: string, filePath: string): CallToolResult['content'][number] => ({
+const textAudioMessage = (record: AudioRecord): CallToolResult['content'][number] => ({
   type: "text",
-  text: `Wrote audio file ${filePath} for text: "${truncate(text, 50)}"`,
+  text: `Wrote ${record.pretty()} to ${record.filePath()}`,
 })
 
 const embeddedAudioMessage = (base64: string): CallToolResult['content'][number] => ({
@@ -166,12 +194,12 @@ const embeddedAudioMessage = (base64: string): CallToolResult['content'][number]
   data: base64
 })
 
-export const ttsSuccess = (state: State, generationIdToAudio: Map<string, Buffer>, sourceText: string): CallToolResult => {
+export const ttsSuccess = (state: State, generationIdToAudio: Map<string, Buffer>): CallToolResult => {
   const messages: IteratorObject<{
     text: CallToolResult['content'][number],
     embedded: CallToolResult['content'][number],
   }> = generationIdToAudio.entries().map(([generationId, buf]) => {
-    const text = textAudioMessage(truncate(sourceText, 50), state.getAudioByGenerationId(generationId)!)
+    const text = textAudioMessage(state.findByGenerationId(generationId)!)
     const embedded = embeddedAudioMessage(buf.toString('base64'))
     return { text, embedded }
   })
@@ -232,15 +260,14 @@ export const handleTts = (state: State) => async (args: TTSCall): Promise<CallTo
     `Synthesizing speech for text: "${text.substring(0, 50)}${text.length > 50 ? "..." : ""}"`,
   );
 
-  const tempDir = path.join(os.tmpdir(), "hume-tts");
-  await fs.mkdir(tempDir, { recursive: true });
+  await ensureWorkdir();
 
   const chunks: Array<{ audio: string; generationId: string }> = [];
   const files: Map<string, FileHandle> = new Map();
   const fileAudioData: Map<string, Buffer> = new Map();
 
   const filePathOf = (generationId: string) =>
-    path.join(tempDir, `${generationId}.wav`);
+    path.join(WORKDIR, `${generationId}.wav`);
   const writeToFile = async (generationId: string, audioBuffer: Buffer) => {
     let fileHandle;
     if (!files.has(generationId)) {
@@ -248,7 +275,7 @@ export const handleTts = (state: State) => async (args: TTSCall): Promise<CallTo
       log(`Writing to ${filePath}...`);
       fileHandle = await fs.open(filePath, "w");
       files.set(generationId, fileHandle);
-      state.addAudio(generationId, filePath);
+      state.addAudio(text, generationId);
     } else {
       fileHandle = files.get(generationId);
     }
@@ -290,15 +317,15 @@ export const handleTts = (state: State) => async (args: TTSCall): Promise<CallTo
   await Promise.all(Array.from(files.values()).map((file) => file.close()));
   await audioPlayer.close()
 
-  return ttsSuccess(state, fileAudioData, text);
+  return ttsSuccess(state, fileAudioData);
 };
 
 export const playPreviousAudioSuccess = (
   generationId: string,
-  filePath: string,
+  audioRecord: AudioRecord,
 ): CallToolResult => ({
   content: [
-    message(`Played audio for generationId: ${generationId}, file: ${filePath}`)
+    message(`Played audio for generationId: ${generationId}, file: ${audioRecord.filePath()}`),
   ],
 });
 export const handlePlayPreviousAudio = (state: State) => async ({
@@ -306,23 +333,23 @@ export const handlePlayPreviousAudio = (state: State) => async ({
 }: {
   generationId: string;
 }): Promise<CallToolResult> => {
-  const filePath = state.getAudioByGenerationId(generationId);
-  if (!filePath) {
+  const audioRecord = state.findByGenerationId(generationId);
+  if (!audioRecord) {
     return errorResult(`No audio found for generationId: ${generationId}`)
   }
   try {
-    await fs.access(filePath);
+    await fs.access(audioRecord.filePath());
   } catch {
-    log(`File not found: ${filePath}`);
-    return errorResult(`Audio file for generationId: ${generationId} was not found at ${filePath}`)
+    log(`File not found: ${audioRecord}`);
+    return errorResult(`Audio file for generationId: ${generationId} was not found at ${audioRecord}`)
   }
 
   try {
-    await playAudioFile(filePath);
+    await playAudioFile(audioRecord.filePath());
   } catch (e) {
     return errorResult(`Error playing audio for generationId: ${generationId}: ${e}`)
   }
-  return playPreviousAudioSuccess(generationId, filePath);
+  return playPreviousAudioSuccess(generationId, audioRecord);
 };
 
 export const handleListVoices = async ({
@@ -398,29 +425,26 @@ export const handleSaveVoice = async ({
 };
 
 export const setup = (server: McpServer, descriptions: typeof DESCRIPTIONS) => {
-  const getResource = (state: State) => async (uri: string): Promise<ReadResourceResult> => {
-    const filePath = uri.replace("file://", "");
-    const buf = Buffer.from(await fs.readFile(filePath));
+  const state = new State()
+  server.resource("tts audio", new ResourceTemplate(`file://${WORKDIR}/{generation_id}.wav`, {
+    list: (): ListResourcesResult => {
+      return {
+        resources: state.list()
+      }
+    }
+  }), async (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
+    const record = state.findByGenerationId(variables['generation_id'] as string)
+    if (!record) {
+      throw new Error(`No audio found for generationId: ${variables['generation_id']}`)
+    }
+    const buf = Buffer.from(await fs.readFile(record.filePath()))
     return {
       contents: [{
-        uri,
+        uri: record.uri(),
         mimeType: 'audio/wav',
         blob: buf.toString('base64')
       }]
     }
-  }
-  const state = new State()
-  server.resource("tts audio", new ResourceTemplate("file://{filePath}", {
-    list: (): ListResourcesResult => {
-      return {
-        resources: state.getFilePaths().map((filePath) => ({
-          name: `audio/${filePath}`,
-          uri: `file://${filePath}`,
-        })),
-      }
-    }
-  }), (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
-    return getResource(state)(variables['filepath'] as string)
   })
   server.tool("tts", descriptions.TTS_TOOL, ttsArgs(descriptions), handleTts(state));
 
