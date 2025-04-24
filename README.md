@@ -1,4 +1,4 @@
-# @humeai/mcp-server-hume
+# @humeai/mcp-server
 
 Implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) for Hume AI's Octave Text-To-Speech.
 
