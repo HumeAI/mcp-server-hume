@@ -1,11 +1,11 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { DESCRIPTIONS } from '../server.js';
-import { Roleplay, RoleplayResult } from './roleplay.js';
-import { scoreCriteria, ScoredCriterion } from './scorer.js';
-import { prettyTranscriptEntry } from './utils.js';
-import Bottleneck from 'bottleneck';
-import { getScenarios } from './scenario/index.js';
+import * as fs from "fs/promises";
+import * as path from "path";
+import { DESCRIPTIONS } from "../server.js";
+import { Roleplay, RoleplayResult } from "./roleplay.js";
+import { scoreCriteria, ScoredCriterion } from "./scorer.js";
+import { prettyTranscriptEntry } from "./utils.js";
+import Bottleneck from "bottleneck";
+import { getScenarios } from "./scenario/index.js";
 
 // Configure a bottleneck limiter for Anthropic API calls
 const anthropicLimiter = new Bottleneck({
@@ -17,31 +17,37 @@ anthropicLimiter.on("failed", (error: any, jobInfo) => {
   const errorObj = error.error?.error || error;
   const statusCode = error.status || 0;
   const errorType = errorObj.type;
-  
+
   // Check for rate limits or service overload
-  if (statusCode === 429 || 
-      errorType === "rate_limit_error" || 
-      errorType === "overloaded_error") {
-    console.error(`API error: ${errorType || statusCode}, pausing all requests for 60 seconds`);
-    
+  if (
+    statusCode === 429 ||
+    errorType === "rate_limit_error" ||
+    errorType === "overloaded_error"
+  ) {
+    console.error(
+      `API error: ${errorType || statusCode}, pausing all requests for 60 seconds`,
+    );
+
     // Stop all requests for 60 seconds
-    anthropicLimiter.updateSettings({ 
-      reservoir: 0 // No requests allowed
+    anthropicLimiter.updateSettings({
+      reservoir: 0, // No requests allowed
     });
-    
+
     // Resume after 60 seconds
     setTimeout(() => {
       console.error("Resuming API requests");
-      anthropicLimiter.updateSettings({ 
-        reservoir: null // Reset to unlimited
+      anthropicLimiter.updateSettings({
+        reservoir: null, // Reset to unlimited
       });
     }, 60000);
-    
+
     // Retry this job after a delay
     return 1000; // 1 second delay before retry
   }
-  
-  console.error(`API error not related to rate limiting: ${JSON.stringify(errorObj)}`);
+
+  console.error(
+    `API error not related to rate limiting: ${JSON.stringify(errorObj)}`,
+  );
   // For other errors, don't retry
   return null;
 });
@@ -54,7 +60,7 @@ const withAnthropicThrottle = <T>(operation: () => Promise<T>): Promise<T> => {
 // Result type for evaluations
 type EvalResult = {
   transcript: any[];
-  result: RoleplayResult | 'incomplete';
+  result: RoleplayResult | "incomplete";
   scores: ScoredCriterion[];
 };
 
@@ -62,60 +68,61 @@ type EvalResult = {
 const runSingleEval = async (
   scenarioName: string,
   outputPath: string,
-  modelName: string = 'claude-3-5-haiku-latest',
-  descriptions: typeof DESCRIPTIONS = DESCRIPTIONS
+  modelName: string = "claude-3-5-haiku-latest",
+  descriptions: typeof DESCRIPTIONS = DESCRIPTIONS,
 ): Promise<EvalResult> => {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error("ANTHROPIC_API_KEY environment variable is required");
     process.exit(1);
   }
-  
+
   const scenarios = await getScenarios(descriptions);
   if (!scenarios[scenarioName]) {
     console.error(`Scenario "${scenarioName}" not found`);
     process.exit(1);
   }
-  
+
   const scenario = scenarios[scenarioName];
-  console.error(`Running scenario: ${scenario.roleplay.name} with maxTurns: ${scenario.maxTurns}`);
-  
+  console.error(
+    `Running scenario: ${scenario.roleplay.name} with maxTurns: ${scenario.maxTurns}`,
+  );
+
   // Create roleplay with throttle-aware methods
   const roleplay = new Roleplay(
-    process.env.ANTHROPIC_API_KEY, 
-    scenario.roleplay, 
+    process.env.ANTHROPIC_API_KEY,
+    scenario.roleplay,
     modelName,
-    withAnthropicThrottle // Pass the throttle wrapper
+    withAnthropicThrottle, // Pass the throttle wrapper
   );
-  
+
   const transcript: any[] = [];
-  
+
   // Iterate through transcript entries as they come in
   for await (const entry of roleplay) {
     transcript.push(entry);
     console.error(prettyTranscriptEntry(entry));
-    
+
     // Break after maxTurns
     if (transcript.length >= scenario.maxTurns) {
       break;
     }
   }
-  
+
   const result = roleplay.getResult();
-  
+
   // Score the criteria with throttling
-  const scores = await withAnthropicThrottle(() => 
-    scoreCriteria(
-      process.env.ANTHROPIC_API_KEY!,
-      scenario.criteria,
-      { transcript, result }
-    )
+  const scores = await withAnthropicThrottle(() =>
+    scoreCriteria(process.env.ANTHROPIC_API_KEY!, scenario.criteria, {
+      transcript,
+      result,
+    }),
   );
-  
+
   // Write results to the output path
   const evalResult = { transcript, result, scores };
   await fs.writeFile(outputPath, JSON.stringify(evalResult, null, 2));
   console.error(`Results saved to ${outputPath}`);
-  
+
   return evalResult;
 };
 
@@ -124,60 +131,66 @@ const runMultipleEvals = async (
   scenarioName: string,
   count: number,
   outputDir: string,
-  modelName: string = 'claude-3-5-haiku-latest',
+  modelName: string = "claude-3-5-haiku-latest",
   descriptions: typeof DESCRIPTIONS = DESCRIPTIONS,
-  customTimestamp?: string
+  customTimestamp?: string,
 ): Promise<EvalResult[]> => {
   // Ensure output directory exists
   await fs.mkdir(outputDir, { recursive: true });
-  
-  const descriptionsSource = descriptions === DESCRIPTIONS ? 'default' : 'custom';
-  const timestamp = customTimestamp || new Date().toISOString().replace(/[:.]/g, '-');
-  
+
+  const descriptionsSource =
+    descriptions === DESCRIPTIONS ? "default" : "custom";
+  const timestamp =
+    customTimestamp || new Date().toISOString().replace(/[:.]/g, "-");
+
   console.error(`Running ${count} evaluations of ${scenarioName} in parallel`);
-  
+
   // Prepare evaluation tasks
   const evalTasks = Array.from({ length: count }, (_, i) => {
-    const outputPath = path.join(outputDir, `${scenarioName}-${descriptionsSource}-${timestamp}-${i + 1}.json`);
+    const outputPath = path.join(
+      outputDir,
+      `${scenarioName}-${descriptionsSource}-${timestamp}-${i + 1}.json`,
+    );
     return {
       index: i + 1,
       outputPath,
-      run: () => runSingleEval(scenarioName, outputPath, modelName, descriptions)
+      run: () =>
+        runSingleEval(scenarioName, outputPath, modelName, descriptions),
     };
   });
-  
+
   // Run all evaluations in parallel
   const results = await Promise.all(
-    evalTasks.map(async task => {
+    evalTasks.map(async (task) => {
       console.error(`\nStarting evaluation ${task.index} of ${count}`);
       const result = await task.run();
       console.error(`Completed evaluation ${task.index} of ${count}`);
       return result;
-    })
+    }),
   );
-  
+
   // Print summary to console
   console.error(`\nCompleted ${count} evaluations of ${scenarioName}`);
-  
+
   // Calculate and show average scores
-  const criteriaMap = new Map<string, { sum: number, count: number }>();
-  
-  results.forEach(result => {
-    result.scores.forEach(score => {
+  const criteriaMap = new Map<string, { sum: number; count: number }>();
+
+  results.forEach((result) => {
+    result.scores.forEach((score) => {
       const existing = criteriaMap.get(score.name) || { sum: 0, count: 0 };
       criteriaMap.set(score.name, {
         sum: existing.sum + score.score,
-        count: existing.count + 1
+        count: existing.count + 1,
       });
     });
   });
-  
+
   console.error("\nAverage scores for this scenario:");
   [...criteriaMap.entries()].forEach(([criterion, { sum, count }]) => {
     const average = sum / count;
     console.error(`${criterion}: ${average.toFixed(2)}`);
   });
-  
+
   return results;
 };
 
@@ -186,159 +199,175 @@ const run = async (
   scenarioNames: string[],
   count: number,
   outputDir: string,
-  modelName: string = 'claude-3-5-haiku-latest',
-  descriptions: typeof DESCRIPTIONS = DESCRIPTIONS
+  modelName: string = "claude-3-5-haiku-latest",
+  descriptions: typeof DESCRIPTIONS = DESCRIPTIONS,
 ): Promise<void> => {
   // Ensure output directory exists
   await fs.mkdir(outputDir, { recursive: true });
-  
-  const descriptionsSource = descriptions === DESCRIPTIONS ? 'default' : 'custom';
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  
-  console.error(`Running ${count} evaluations of ${scenarioNames.length} scenarios: ${scenarioNames.join(', ')}`);
-  
+
+  const descriptionsSource =
+    descriptions === DESCRIPTIONS ? "default" : "custom";
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+  console.error(
+    `Running ${count} evaluations of ${scenarioNames.length} scenarios: ${scenarioNames.join(", ")}`,
+  );
+
   const allResults: Record<string, EvalResult[]> = {};
   const allScores: Record<string, Record<string, number[]>> = {};
-  
+
   // Run all scenarios in parallel
   const scenarioPromises = scenarioNames.map(async (scenarioName) => {
     console.error(`\n==== Starting scenario: ${scenarioName} ====`);
-    
+
     const results = await runMultipleEvals(
-      scenarioName, 
-      count, 
+      scenarioName,
+      count,
       outputDir,
       modelName,
       descriptions,
-      `${scenarioName}-${descriptionsSource}-${timestamp}`
+      `${scenarioName}-${descriptionsSource}-${timestamp}`,
     );
-    
+
     return { scenarioName, results };
   });
-  
+
   // Wait for all scenarios to complete
   const completedScenarios = await Promise.all(scenarioPromises);
-  
+
   // Process results
   for (const { scenarioName, results } of completedScenarios) {
     allResults[scenarioName] = results;
-    
+
     // Collect scores for this scenario
     allScores[scenarioName] = {};
-    
+
     // Gather all criteria used in this scenario
     const allCriteriaForScenario = new Set<string>();
-    results.forEach(result => {
-      result.scores.forEach(score => {
+    results.forEach((result) => {
+      result.scores.forEach((score) => {
         allCriteriaForScenario.add(score.name);
       });
     });
-    
+
     // Collect all scores for each criterion
-    allCriteriaForScenario.forEach(criterion => {
-      allScores[scenarioName][criterion] = results.map(result => {
-        const score = result.scores.find(s => s.name === criterion);
+    allCriteriaForScenario.forEach((criterion) => {
+      allScores[scenarioName][criterion] = results.map((result) => {
+        const score = result.scores.find((s) => s.name === criterion);
         return score ? score.score : 0;
       });
     });
   }
-  
+
   // Create a consolidated results summary
   // This will include average scores for all criteria and highlight low scores
-  
+
   // Global average scores across all scenarios
-  const globalScores: Record<string, { 
-    totalScore: number, 
-    count: number, 
-    lowScoreReasons: Array<{
-      scenario: string,
-      runIndex: number,
-      score: number,
-      reason: string
-    }>
-  }> = {};
-  
+  const globalScores: Record<
+    string,
+    {
+      totalScore: number;
+      count: number;
+      lowScoreReasons: Array<{
+        scenario: string;
+        runIndex: number;
+        score: number;
+        reason: string;
+      }>;
+    }
+  > = {};
+
   // Collect all scores and low score reasons from all scenarios
   for (const scenarioName of scenarioNames) {
     const scenarioResults = allResults[scenarioName];
-    
+
     scenarioResults.forEach((result, runIndex) => {
-      result.scores.forEach(scoredCriterion => {
+      result.scores.forEach((scoredCriterion) => {
         const { name, score, reason } = scoredCriterion;
-        
+
         // Initialize criterion in global scores if not exists
         if (!globalScores[name]) {
-          globalScores[name] = { 
-            totalScore: 0, 
-            count: 0, 
-            lowScoreReasons: [] 
+          globalScores[name] = {
+            totalScore: 0,
+            count: 0,
+            lowScoreReasons: [],
           };
         }
-        
+
         // Add score to global total
         globalScores[name].totalScore += score;
         globalScores[name].count += 1;
-        
+
         // Record low scores with reasons
         if (score <= 0.6) {
           globalScores[name].lowScoreReasons.push({
             scenario: scenarioName,
             runIndex,
             score,
-            reason
+            reason,
           });
         }
       });
     });
   }
-  
+
   // Prepare the consolidated report
   const consolidatedReport = {
     runInfo: {
       scenarios: scenarioNames,
       model: modelName,
       timestamp,
-      totalRuns: Object.values(allResults).flat().length
+      totalRuns: Object.values(allResults).flat().length,
     },
-    criteriaResults: Object.entries(globalScores).map(([criterion, data]) => {
-      const averageScore = data.totalScore / data.count;
-      return {
-        criterion,
-        averageScore,
-        occurrences: data.count,
-        lowScores: data.lowScoreReasons.sort((a, b) => a.score - b.score) // Sort by score ascending
-      };
-    }).sort((a, b) => a.averageScore - b.averageScore) // Sort criteria by average score
+    criteriaResults: Object.entries(globalScores)
+      .map(([criterion, data]) => {
+        const averageScore = data.totalScore / data.count;
+        return {
+          criterion,
+          averageScore,
+          occurrences: data.count,
+          lowScores: data.lowScoreReasons.sort((a, b) => a.score - b.score), // Sort by score ascending
+        };
+      })
+      .sort((a, b) => a.averageScore - b.averageScore), // Sort criteria by average score
   };
-  
+
   // Write consolidated report to file
   const reportPath = path.join(outputDir, `eval-report-${timestamp}.json`);
   await fs.writeFile(reportPath, JSON.stringify(consolidatedReport, null, 2));
   console.error(`\nConsolidated evaluation report saved to ${reportPath}`);
-  
+
   // Print summary statistics to console
   console.error("\n==== Evaluation Summary ====");
-  console.error(`Scenarios: ${scenarioNames.join(', ')}`);
-  console.error(`Total evaluation runs: ${consolidatedReport.runInfo.totalRuns}`);
-  
-  console.error("\nCriteria Average Scores (sorted by score):");
-  consolidatedReport.criteriaResults.forEach(criteria => {
-    console.error(`  ${criteria.criterion}: ${criteria.averageScore.toFixed(2)}`);
-  });
-  
-  // Print low score highlights
-  const lowScoreCriteria = consolidatedReport.criteriaResults.filter(c => 
-    c.lowScores.length > 0
+  console.error(`Scenarios: ${scenarioNames.join(", ")}`);
+  console.error(
+    `Total evaluation runs: ${consolidatedReport.runInfo.totalRuns}`,
   );
-  
+
+  console.error("\nCriteria Average Scores (sorted by score):");
+  consolidatedReport.criteriaResults.forEach((criteria) => {
+    console.error(
+      `  ${criteria.criterion}: ${criteria.averageScore.toFixed(2)}`,
+    );
+  });
+
+  // Print low score highlights
+  const lowScoreCriteria = consolidatedReport.criteriaResults.filter(
+    (c) => c.lowScores.length > 0,
+  );
+
   if (lowScoreCriteria.length > 0) {
     console.error("\nLow Score Highlights (score <= 0.6):");
-    lowScoreCriteria.forEach(criteria => {
-      console.error(`\n  ${criteria.criterion} - Avg: ${criteria.averageScore.toFixed(2)}, Low scores: ${criteria.lowScores.length}`);
-      
+    lowScoreCriteria.forEach((criteria) => {
+      console.error(
+        `\n  ${criteria.criterion} - Avg: ${criteria.averageScore.toFixed(2)}, Low scores: ${criteria.lowScores.length}`,
+      );
+
       // Print up to 3 lowest score reasons per criterion
-      criteria.lowScores.slice(0, 3).forEach(lowScore => {
-        console.error(`    • ${lowScore.scenario} (${lowScore.score.toFixed(2)}): ${lowScore.reason.split('\n')[0]}`);
+      criteria.lowScores.slice(0, 3).forEach((lowScore) => {
+        console.error(
+          `    • ${lowScore.scenario} (${lowScore.score.toFixed(2)}): ${lowScore.reason.split("\n")[0]}`,
+        );
       });
     });
   }
@@ -348,17 +377,17 @@ const run = async (
 
 // Help command
 interface HelpArgs {
-  command: 'help';
+  command: "help";
 }
 
 // List command
 interface ListArgs {
-  command: 'list';
+  command: "list";
 }
 
 // Run command
 interface RunArgs {
-  command: 'run';
+  command: "run";
   scenarioNames: string[];
   count: number;
   outputDir: string;
@@ -396,74 +425,74 @@ Examples:
 
 // Parse help command
 const parseHelpCommand = (): HelpArgs => {
-  return { command: 'help' };
+  return { command: "help" };
 };
 
 // Parse list command
 const parseListCommand = (): ListArgs => {
-  return { command: 'list' };
+  return { command: "list" };
 };
 
 // Parse run command
 const parseRunCommand = (args: string[]): RunArgs => {
   const runArgs: RunArgs = {
-    command: 'run',
+    command: "run",
     scenarioNames: [],
     count: 1,
-    outputDir: './eval-results',
-    modelName: 'claude-3-5-haiku-latest',
-    descriptionsPath: '',
-    runAllScenarios: false
+    outputDir: "./eval-results",
+    modelName: "claude-3-5-haiku-latest",
+    descriptionsPath: "",
+    runAllScenarios: false,
   };
-  
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    
-    if (arg === '--all') {
+
+    if (arg === "--all") {
       runArgs.runAllScenarios = true;
-    }
-    else if ((arg === '--count' || arg === '-c') && i + 1 < args.length) {
+    } else if ((arg === "--count" || arg === "-c") && i + 1 < args.length) {
       const countArg = parseInt(args[++i], 10);
       if (isNaN(countArg) || countArg < 1) {
         console.error("Error: count must be a positive integer");
         process.exit(1);
       }
       runArgs.count = countArg;
-    }
-    else if ((arg === '--output-dir' || arg === '-o') && i + 1 < args.length) {
+    } else if (
+      (arg === "--output-dir" || arg === "-o") &&
+      i + 1 < args.length
+    ) {
       runArgs.outputDir = args[++i];
-    }
-    else if ((arg === '--model' || arg === '-m') && i + 1 < args.length) {
+    } else if ((arg === "--model" || arg === "-m") && i + 1 < args.length) {
       runArgs.modelName = args[++i];
-    }
-    else if ((arg === '--descriptions' || arg === '-d') && i + 1 < args.length) {
+    } else if (
+      (arg === "--descriptions" || arg === "-d") &&
+      i + 1 < args.length
+    ) {
       runArgs.descriptionsPath = args[++i];
-    }
-    else if (!arg.startsWith('-')) {
+    } else if (!arg.startsWith("-")) {
       runArgs.scenarioNames.push(arg);
-    }
-    else {
+    } else {
       console.error(`Error: unknown option ${arg}`);
       process.exit(1);
     }
   }
-  
+
   return runArgs;
 };
 
 // Parse command line arguments
 const parseCommandArgs = (args: string[]): CliArgs => {
-  if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+  if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
     return parseHelpCommand();
   }
 
   const command = args[0];
-  
-  if (command === 'list') {
+
+  if (command === "list") {
     return parseListCommand();
   }
-  
-  if (command === 'run') {
+
+  if (command === "run") {
     return parseRunCommand(args.slice(1));
   }
 
@@ -474,7 +503,7 @@ const parseCommandArgs = (args: string[]): CliArgs => {
 // List all available scenarios
 const listScenarios = async (): Promise<void> => {
   const scenarios = await getScenarios(DESCRIPTIONS);
-  
+
   console.log("Available scenarios:");
   for (const [id, scenario] of Object.entries(scenarios)) {
     console.log(`- ${id}: ${scenario.roleplay.name}`);
@@ -482,10 +511,12 @@ const listScenarios = async (): Promise<void> => {
 };
 
 // Load custom descriptions from a file
-const loadCustomDescriptions = async (filePath: string): Promise<typeof DESCRIPTIONS> => {
+const loadCustomDescriptions = async (
+  filePath: string,
+): Promise<typeof DESCRIPTIONS> => {
   try {
     console.error(`Loading custom descriptions from ${filePath}`);
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, "utf-8");
     return JSON.parse(content);
   } catch (error) {
     console.error(`Error loading custom descriptions: ${error}`);
@@ -500,22 +531,31 @@ const handleListCommand = async (_args: ListArgs): Promise<void> => {
 
 // Handle run command
 const handleRunCommand = async (args: RunArgs): Promise<void> => {
-  const { scenarioNames, count, outputDir, modelName, descriptionsPath, runAllScenarios } = args;
-  
+  const {
+    scenarioNames,
+    count,
+    outputDir,
+    modelName,
+    descriptionsPath,
+    runAllScenarios,
+  } = args;
+
   // Load available scenarios
   const availableScenarios = await getScenarios(DESCRIPTIONS);
   const availableScenarioNames = Object.keys(availableScenarios);
-  
+
   // Determine which scenarios to run
   let scenariosToRun: string[] = [];
-  
+
   if (runAllScenarios) {
     scenariosToRun = availableScenarioNames;
   } else if (scenarioNames.length > 0) {
     // Validate specified scenarios
     for (const name of scenarioNames) {
       if (!availableScenarioNames.includes(name)) {
-        console.error(`Error: unknown scenario "${name}". Available scenarios: ${availableScenarioNames.join(', ')}`);
+        console.error(
+          `Error: unknown scenario "${name}". Available scenarios: ${availableScenarioNames.join(", ")}`,
+        );
         process.exit(1);
       }
     }
@@ -524,13 +564,13 @@ const handleRunCommand = async (args: RunArgs): Promise<void> => {
     console.error("Error: no scenarios specified. Use scenario names or --all");
     process.exit(1);
   }
-  
+
   // Load custom descriptions if specified
   let descriptions = DESCRIPTIONS;
   if (descriptionsPath) {
     descriptions = await loadCustomDescriptions(descriptionsPath);
   }
-  
+
   // Run scenarios
   await run(scenariosToRun, count, outputDir, modelName, descriptions);
 };
@@ -538,15 +578,15 @@ const handleRunCommand = async (args: RunArgs): Promise<void> => {
 // Execute the command with the parsed arguments
 const executeCommand = async (cliArgs: CliArgs): Promise<void> => {
   switch (cliArgs.command) {
-    case 'help':
+    case "help":
       printHelp();
       break;
-    
-    case 'list':
+
+    case "list":
       await handleListCommand(cliArgs);
       break;
-    
-    case 'run':
+
+    case "run":
       await handleRunCommand(cliArgs);
       break;
   }

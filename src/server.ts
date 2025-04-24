@@ -1,19 +1,30 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { HumeClient } from "hume";
-import type { Hume } from "hume"
+import type { Hume } from "hume";
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as os from "os";
-import { CallToolResult, ListResourcesResult, ReadResourceResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { playAudioFile, getStdinAudioPlayer, AudioPlayer } from "./play_audio.js";
+import {
+  CallToolResult,
+  ListResourcesResult,
+  ReadResourceResult,
+  Tool,
+} from "@modelcontextprotocol/sdk/types.js";
+import {
+  playAudioFile,
+  getStdinAudioPlayer,
+  AudioPlayer,
+} from "./play_audio.js";
 import { FileHandle } from "fs/promises";
 import { Variables } from "@modelcontextprotocol/sdk/shared/uriTemplate.js";
 
 // Tool descriptions
 export const DESCRIPTIONS = {
-  TTS_TOOL:
-    `Generates expressive speech from text, saves a single audio file to a temporary location, and plays it back through the user's speakers.
+  TTS_TOOL: `Generates expressive speech from text, saves a single audio file to a temporary location, and plays it back through the user's speakers.
     
 IMPORTANT GUIDELINES:
   1. ALWAYS provide "continuationOf" equal to the generation id of the previous TTS tool call unless you explicitly intend to speak with a different voice or you are narrating an entirely new body of text.
@@ -25,14 +36,15 @@ IMPORTANT GUIDELINES:
   TTS_UTTERANCE_TEXT: `The input text to be synthesized into speech. Modify source text with punctuation or CAPITALS for emotional emphasis, when appropriate.
 
   Remove unnecessary formatting symbols. Convert meaningful formatting -- like numbered lists -- into pronouncable markers like "first, second, third" -- when it is obvious how to do so. Best practice is to convert such text content into natural speech markers when it is obvious how to do so. Omit unpronouncable text such as large code snippets. Do not omit URLs, email addresses, and small code snippets like variable names, which can be pronounced. When omitting large blocks of unpronouncable content, such as code, best practice is to use a distinct voice (with a different TTS call) to speak a "placeholder" summarizing the omitted content in less than a sentence`,
-  TTS_UTTERANCE_DESCRIPTION:
-    `Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, emotion, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). Always include this field when designing a new voice. When an existing voice is specified with 'voiceName', this field constitutes 'acting instructions' and should be provided when requested to modulate the voice's tone, emotion, etc.`,
+  TTS_UTTERANCE_DESCRIPTION: `Natural language instructions describing how the synthesized speech should sound, including but not limited to tone, intonation, emotion, pacing, and accent (e.g., 'a soft, gentle voice with a strong British accent'). Always include this field when designing a new voice. When an existing voice is specified with 'voiceName', this field constitutes 'acting instructions' and should be provided when requested to modulate the voice's tone, emotion, etc.`,
   TTS_VOICE_NAME:
     "The name of the voice from the voice library to use as the speaker for the text.",
   TTS_PROVIDER:
     "Set this equal to HUME_AI when you wish to use a voice provided by Hume, and not among the custom voices saved to your voice library.",
-  TTS_UTTERANCE_SPEED: "Alters the speaking rate of the voice. Usually unnecessary, the model automatically chooses an appropriate speaking rate according to the text and \"description\". Provide only when the model's default is unsatisfactory. Values range from 0.5 (very slow) to 2.0 (very fast).",
-  TTS_UTTERANCE_TRAILING_SILENCE: "Manually adds silence (0-5 seconds) after an utterance. The model automatically inserts pauses where natural. Use this only when there is a desire to override the model's default pausing behavior.",
+  TTS_UTTERANCE_SPEED:
+    'Alters the speaking rate of the voice. Usually unnecessary, the model automatically chooses an appropriate speaking rate according to the text and "description". Provide only when the model\'s default is unsatisfactory. Values range from 0.5 (very slow) to 2.0 (very fast).',
+  TTS_UTTERANCE_TRAILING_SILENCE:
+    "Manually adds silence (0-5 seconds) after an utterance. The model automatically inserts pauses where natural. Use this only when there is a desire to override the model's default pausing behavior.",
   TTS_CONTINUATION:
     "ALWAYS provide this field when continuing speech from a previous TTS call. This is important for both voice consistency and to make the prosody sound natural when continuing text.",
   TTS_QUIET: "Whether to skip playing back the generated audio.",
@@ -90,11 +102,7 @@ class AudioRecord {
   private generationId: string;
   private workdir: string;
 
-  constructor(
-    text: string,
-    generationId: string,
-    workdir: string,
-  ) {
+  constructor(text: string, generationId: string, workdir: string) {
     this.text = text;
     this.generationId = generationId;
     this.workdir = workdir;
@@ -140,7 +148,7 @@ class State {
     return record;
   }
 
-  list(): {name: string, uri: string}[] {
+  list(): { name: string; uri: string }[] {
     return Array.from(this._byFilePath.values()).map((record) => ({
       name: record.pretty(),
       uri: record.uri(),
@@ -166,11 +174,11 @@ export class HumeServer {
   private readonly workdir: string;
   private readonly humeClient: HumeClient;
   private readonly log: LogFn;
-  
+
   // State
   private readonly state: State;
   private server?: McpServer;
-  
+
   constructor({
     instantMode,
     claudeDesktopMode,
@@ -188,71 +196,79 @@ export class HumeServer {
     this.claudeDesktopMode = claudeDesktopMode;
     this.workdir = workdir;
     this.log = log;
-    
+
     // Initialize client
     this.humeClient = new HumeClient({ apiKey: humeApiKey });
-    
+
     // Initialize state
     this.state = new State(this.workdir);
   }
-  
-  private message(text: string): CallToolResult['content'][number] {
+
+  private message(text: string): CallToolResult["content"][number] {
     return {
       type: "text",
-      text: JSON.stringify({ type: 'text', text }, null, 2),
+      text: JSON.stringify({ type: "text", text }, null, 2),
     };
   }
-  
+
   private errorResult(error: string): CallToolResult {
     return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({ type: 'error', error }, null, 2),
-      }], 
-      isError: true
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ type: "error", error }, null, 2),
+        },
+      ],
+      isError: true,
     };
   }
-  
+
   private async ensureWorkdir(): Promise<void> {
     await fs.mkdir(this.workdir, { recursive: true });
   }
-  
-  private textAudioMessage(record: AudioRecord): CallToolResult['content'][number] {
+
+  private textAudioMessage(
+    record: AudioRecord,
+  ): CallToolResult["content"][number] {
     return {
       type: "text",
       text: `Wrote ${record.pretty()} to ${record.filePath()}`,
     };
   }
-  
-  private embeddedAudioMessage(base64: string): CallToolResult['content'][number] {
+
+  private embeddedAudioMessage(
+    base64: string,
+  ): CallToolResult["content"][number] {
     return {
       type: "audio",
       mimeType: "audio/wav",
-      data: base64
+      data: base64,
     };
   }
-  
+
   private ttsSuccess(generationIdToAudio: Map<string, Buffer>): CallToolResult {
     const messages: IteratorObject<{
-      text: CallToolResult['content'][number],
-      embedded: CallToolResult['content'][number],
+      text: CallToolResult["content"][number];
+      embedded: CallToolResult["content"][number];
     }> = generationIdToAudio.entries().map(([generationId, buf]) => {
-      const text = this.textAudioMessage(this.state.findByGenerationId(generationId)!);
-      const embedded = this.embeddedAudioMessage(buf.toString('base64'));
+      const text = this.textAudioMessage(
+        this.state.findByGenerationId(generationId)!,
+      );
+      const embedded = this.embeddedAudioMessage(buf.toString("base64"));
       return { text, embedded };
     });
-    
+
     if (this.claudeDesktopMode) {
       return {
-        content: [...messages.map(({ text }) => text)]
+        content: [...messages.map(({ text }) => text)],
       };
     }
-    
+
     return {
-      content: [...messages.flatMap(({ text, embedded }) => [text, embedded])]
+      content: [...messages.flatMap(({ text, embedded }) => [text, embedded])],
     };
   }
-  
+
   private async handleTts(args: TTSCall): Promise<CallToolResult> {
     const {
       continuationOf,
@@ -260,7 +276,7 @@ export class HumeServer {
       quiet,
       utterances: utterancesInput,
     } = args;
-    
+
     const utterances: Array<Hume.tts.PostedUtterance> = [];
     for (const utt of utterancesInput) {
       const utterance: Hume.tts.PostedUtterance = {
@@ -284,16 +300,15 @@ export class HumeServer {
       utterances.push(utterance);
     }
 
-    const context: Hume.tts.PostedContextWithGenerationId | null = continuationOf
-      ? { generationId: continuationOf }
-      : null;
-      
+    const context: Hume.tts.PostedContextWithGenerationId | null =
+      continuationOf ? { generationId: continuationOf } : null;
+
     const request: Hume.tts.PostedTts = {
       utterances,
       stripHeaders: true,
       instantMode: this.instantMode && !voiceName && !continuationOf,
     };
-    
+
     if (context) {
       request.context = context;
     }
@@ -311,7 +326,7 @@ export class HumeServer {
 
     const filePathOf = (generationId: string) =>
       path.join(this.workdir, `${generationId}.wav`);
-      
+
     const writeToFile = async (generationId: string, audioBuffer: Buffer) => {
       let fileHandle;
       if (!files.has(generationId)) {
@@ -326,12 +341,16 @@ export class HumeServer {
       await fileHandle!.write(audioBuffer);
     };
 
-    const audioPlayer: AudioPlayer = quiet ? {
-      sendAudio: () => { },
-      close: async () => { },
-    } : getStdinAudioPlayer();
-    
-    let stream: Awaited<ReturnType<typeof this.humeClient.tts.synthesizeJsonStreaming>>;
+    const audioPlayer: AudioPlayer = quiet
+      ? {
+          sendAudio: () => {},
+          close: async () => {},
+        }
+      : getStdinAudioPlayer();
+
+    let stream: Awaited<
+      ReturnType<typeof this.humeClient.tts.synthesizeJsonStreaming>
+    >;
 
     try {
       this.log(JSON.stringify(request, null, 2));
@@ -339,9 +358,11 @@ export class HumeServer {
     } catch (e) {
       this.log(`Error synthesizing speech: ${e}`);
       this.log(`${JSON.stringify(request)}`);
-      return this.errorResult(`Error synthesizing speech: ${e} + ${(e as any).trace}`);
+      return this.errorResult(
+        `Error synthesizing speech: ${e} + ${(e as any).trace}`,
+      );
     }
-    
+
     for await (const audioChunk of stream) {
       this.log(
         `Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => (k === "audio" ? "[Audio Data]" : undefined))}`,
@@ -355,29 +376,34 @@ export class HumeServer {
         fileAudioData.set(generationId, buf);
       } else {
         const currentBuffer = fileAudioData.get(generationId);
-        const newBuffer = Buffer.concat([currentBuffer || Buffer.alloc(0), buf]);
+        const newBuffer = Buffer.concat([
+          currentBuffer || Buffer.alloc(0),
+          buf,
+        ]);
         fileAudioData.set(generationId, newBuffer);
       }
       await writeToFile(generationId, buf);
     }
-    
+
     await Promise.all(Array.from(files.values()).map((file) => file.close()));
     await audioPlayer.close();
 
     return this.ttsSuccess(fileAudioData);
   }
-  
+
   private playPreviousAudioSuccess(
     generationId: string,
     audioRecord: AudioRecord,
   ): CallToolResult {
     return {
       content: [
-        this.message(`Played audio for generationId: ${generationId}, file: ${audioRecord.filePath()}`),
+        this.message(
+          `Played audio for generationId: ${generationId}, file: ${audioRecord.filePath()}`,
+        ),
       ],
     };
   }
-  
+
   private async handlePlayPreviousAudio({
     generationId,
   }: {
@@ -385,25 +411,31 @@ export class HumeServer {
   }): Promise<CallToolResult> {
     const audioRecord = this.state.findByGenerationId(generationId);
     if (!audioRecord) {
-      return this.errorResult(`No audio found for generationId: ${generationId}`);
+      return this.errorResult(
+        `No audio found for generationId: ${generationId}`,
+      );
     }
-    
+
     try {
       await fs.access(audioRecord.filePath());
     } catch {
       this.log(`File not found: ${audioRecord}`);
-      return this.errorResult(`Audio file for generationId: ${generationId} was not found at ${audioRecord}`);
+      return this.errorResult(
+        `Audio file for generationId: ${generationId} was not found at ${audioRecord}`,
+      );
     }
 
     try {
       await playAudioFile(audioRecord.filePath());
     } catch (e) {
-      return this.errorResult(`Error playing audio for generationId: ${generationId}: ${e}`);
+      return this.errorResult(
+        `Error playing audio for generationId: ${generationId}: ${e}`,
+      );
     }
-    
+
     return this.playPreviousAudioSuccess(generationId, audioRecord);
   }
-  
+
   private async handleListVoices({
     provider,
     pageNumber,
@@ -420,19 +452,25 @@ export class HumeServer {
         pageNumber,
         pageSize,
       });
-      
+
       this.log(`Voices: ${JSON.stringify(voices, null, 2)}`);
       return {
-        content: [this.message(`Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`)]
+        content: [
+          this.message(
+            `Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`,
+          ),
+        ],
       };
     } catch (error) {
       this.log(
         `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return this.errorResult(`Error listing voices: ${error instanceof Error ? error.message : String(error)}`);
+      return this.errorResult(
+        `Error listing voices: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  
+
   private async handleDeleteVoice({
     name,
   }: {
@@ -442,18 +480,18 @@ export class HumeServer {
       this.log(`Deleting voice with name: ${name}`);
       await this.humeClient.tts.voices.delete({ name });
       return {
-        content: [
-          this.message(`Successfully deleted voice \"${name}\".`),
-        ],
+        content: [this.message(`Successfully deleted voice \"${name}\".`)],
       };
     } catch (error) {
       this.log(
         `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return this.errorResult(`Error deleting voice: ${error instanceof Error ? error.message : String(error)}`);
+      return this.errorResult(
+        `Error deleting voice: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  
+
   private async handleSaveVoice({
     generationId,
     name,
@@ -462,53 +500,70 @@ export class HumeServer {
     name: string;
   }): Promise<CallToolResult> {
     try {
-      this.log(`Saving voice with generationId: ${generationId} as name: \"${name}\"`);
-      const response = await this.humeClient.tts.voices.create({ generationId, name });
+      this.log(
+        `Saving voice with generationId: ${generationId} as name: \"${name}\"`,
+      );
+      const response = await this.humeClient.tts.voices.create({
+        generationId,
+        name,
+      });
       return {
         content: [
-          this.message(`Successfully saved voice \"${name}\" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`)
+          this.message(
+            `Successfully saved voice \"${name}\" with ID: ${response.id}. You can use this name in future TTS requests with the voiceName parameter.`,
+          ),
         ],
       };
     } catch (error) {
       this.log(
         `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return this.errorResult(`Error saving voice: ${error instanceof Error ? error.message : String(error)}`);
+      return this.errorResult(
+        `Error saving voice: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
-  
+
   public setupMcpServer(server: McpServer): McpServer {
     this.server = server;
-    
-    const resourceHandler = async (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
-      const record = this.state.findByGenerationId(variables['generation_id'] as string);
+
+    const resourceHandler = async (
+      _uri: URL,
+      variables: Variables,
+      _extra: unknown,
+    ): Promise<ReadResourceResult> => {
+      const record = this.state.findByGenerationId(
+        variables["generation_id"] as string,
+      );
       if (!record) {
-        throw new Error(`No audio found for generationId: ${variables['generation_id']}`);
+        throw new Error(
+          `No audio found for generationId: ${variables["generation_id"]}`,
+        );
       }
       const buf = Buffer.from(await fs.readFile(record.filePath()));
       return {
-        contents: [{
-          uri: record.uri(),
-          mimeType: 'audio/wav',
-          blob: buf.toString('base64')
-        }]
+        contents: [
+          {
+            uri: record.uri(),
+            mimeType: "audio/wav",
+            blob: buf.toString("base64"),
+          },
+        ],
       };
     };
 
-    server.resource("tts audio", 
+    server.resource(
+      "tts audio",
       new ResourceTemplate(`file://${this.workdir}/{generation_id}.wav`, {
         list: (): ListResourcesResult => ({
-          resources: this.state.list()
-        })
-      }), 
-      resourceHandler
+          resources: this.state.list(),
+        }),
+      }),
+      resourceHandler,
     );
-    
-    server.tool(
-      "tts", 
-      DESCRIPTIONS.TTS_TOOL, 
-      ttsArgs(DESCRIPTIONS), 
-      (args) => this.handleTts(args)
+
+    server.tool("tts", DESCRIPTIONS.TTS_TOOL, ttsArgs(DESCRIPTIONS), (args) =>
+      this.handleTts(args),
     );
 
     server.tool(
@@ -557,24 +612,26 @@ export class HumeServer {
       "save_voice",
       DESCRIPTIONS.SAVE_VOICE,
       {
-        generationId: z.string().describe(DESCRIPTIONS.SAVE_VOICE_GENERATION_ID),
+        generationId: z
+          .string()
+          .describe(DESCRIPTIONS.SAVE_VOICE_GENERATION_ID),
         name: z.string().describe(DESCRIPTIONS.SAVE_VOICE_NAME),
       },
       (args) => this.handleSaveVoice(args),
     );
-    
+
     return server;
   }
-  
+
   public async getToolDefinitions(server?: McpServer): Promise<Array<Tool>> {
     const mcpServer = server || this.server;
-    
+
     if (!mcpServer) {
       throw new Error("McpServer not initialized. Call setupMcpServer first.");
     }
-    
+
     mcpServer.sendResourceListChanged();
-    
+
     return (
       await (mcpServer.server as any)._requestHandlers.get("tools/list")({
         method: "tools/list",

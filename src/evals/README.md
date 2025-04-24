@@ -28,15 +28,18 @@ bun run src/evals/index.ts run --all --descriptions improved-descriptions.json
 ## Evaluation Scenarios
 
 ### Basic Scenarios
+
 - **Screen Reader**: Tests basic content reading capabilities
 - **Picky Screen Reader**: Tests handling of specific voice parameters
 - **Habitual Screen Reader**: Tests continuation across multiple text segments
 
 ### Voice Management Scenarios
+
 - **Voice Designer**: Tests voice creation and customization
 - **Voice Explorer**: Tests browsing and selecting from voice libraries
 
 ### Creative Scenarios
+
 - **AI Poet**: Tests poetic content generation and appropriate voicing
 - **AI Playwright**: Tests dialogue reading with different character voices
 
@@ -49,6 +52,7 @@ bun run src/evals/index.ts run --all --descriptions improved-descriptions.json
 ## Results Analysis
 
 Evaluation results are saved to the specified output directory with:
+
 - Individual scenario results with full transcripts
 - Consolidated reports with average scores and low-score analysis
 - Timestamp-based organization for comparing results over time

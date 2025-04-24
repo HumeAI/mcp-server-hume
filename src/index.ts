@@ -7,7 +7,8 @@ import * as path from "path";
 import * as os from "os";
 import meow from "meow";
 
-const cli = meow(`
+const cli = meow(
+  `
   Usage
     $ bunx @humeai/mcp-server [options]
 
@@ -20,52 +21,54 @@ const cli = meow(`
     WORKDIR                   Alternative to --workdir
     CLAUDE_DESKTOP_MODE       Alternative to --claude-desktop-mode (set to 'false' to disable)
     HUME_API_KEY              Required Hume API key
-`, {
-  importMeta: import.meta,
-  flags: {
-    workdir: {
-      type: 'string',
-      shortFlag: 'w',
-      default: process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts")
+`,
+  {
+    importMeta: import.meta,
+    flags: {
+      workdir: {
+        type: "string",
+        shortFlag: "w",
+        default: process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts"),
+      },
+      claudeDesktopMode: {
+        type: "boolean",
+        shortFlag: "c",
+        default: process.env.CLAUDE_DESKTOP_MODE !== "false",
+      },
+      instantMode: {
+        type: "boolean",
+        default: true,
+      },
     },
-    claudeDesktopMode: {
-      type: 'boolean',
-      shortFlag: 'c',
-      default: process.env.CLAUDE_DESKTOP_MODE !== 'false',
-    },
-    instantMode: {
-      type: 'boolean',
-      default: true,
-    }
-  }
-});
+  },
+);
 
 const main = async () => {
   // Extract flags from CLI
   const { workdir, claudeDesktopMode, instantMode } = cli.flags;
-  
+
   // Set up logging
   const logFile = await fs.open("/tmp/mcp-server-hume.log", "a");
 
   // Custom log function that logs to both console and file
   const logFn = (...args: any[]) => {
     console.error(...args);
-    logFile.write(JSON.stringify(args) + "\n").catch(err => {
+    logFile.write(JSON.stringify(args) + "\n").catch((err) => {
       console.error("Error writing to log file:", err);
     });
   };
-  
+
   // Register cleanup on exit
   process.on("exit", async () => {
     await logFile.close();
   });
-  
+
   // Check for API key
   if (!process.env.HUME_API_KEY) {
     logFn("Please set the HUME_API_KEY environment variable.");
     process.exit(1);
   }
-  
+
   // Create the Hume server with our configuration
   const humeServer = new HumeServer({
     instantMode,
@@ -74,21 +77,23 @@ const main = async () => {
     log: logFn,
     humeApiKey: process.env.HUME_API_KEY,
   });
-  
+
   // Create and setup the McpServer
   const mcpServer = new McpServer({
     name: "hume",
     version: "0.1.0",
   });
-  
+
   // Configure the server with Hume tools
   humeServer.setupMcpServer(mcpServer);
-  
+
   // Connect server to transport
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
-  
-  logFn(`Hume MCP Server running on stdio (workdir: ${workdir}, claudeDesktopMode: ${claudeDesktopMode})`);
+
+  logFn(
+    `Hume MCP Server running on stdio (workdir: ${workdir}, claudeDesktopMode: ${claudeDesktopMode})`,
+  );
 };
 
 // If this file is run directly, start the server
