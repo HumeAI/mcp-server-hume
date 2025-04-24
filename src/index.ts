@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { HumeServer } from "./server.js";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -43,12 +44,25 @@ const main = async () => {
   // Extract flags from CLI
   const { workdir, claudeDesktopMode, instantMode } = cli.flags;
   
-  // Open log file
+  // Set up logging
   const logFile = await fs.open("/tmp/mcp-server-hume.log", "a");
+
+  // Custom log function that logs to both console and file
+  const logFn = (...args: any[]) => {
+    console.error(...args);
+    logFile.write(JSON.stringify(args) + "\n").catch(err => {
+      console.error("Error writing to log file:", err);
+    });
+  };
+  
+  // Register cleanup on exit
+  process.on("exit", async () => {
+    await logFile.close();
+  });
   
   // Check for API key
   if (!process.env.HUME_API_KEY) {
-    console.error("Please set the HUME_API_KEY environment variable.");
+    logFn("Please set the HUME_API_KEY environment variable.");
     process.exit(1);
   }
   
@@ -57,22 +71,29 @@ const main = async () => {
     instantMode,
     workdir,
     claudeDesktopMode,
-    logFile,
+    log: logFn,
     humeApiKey: process.env.HUME_API_KEY,
   });
   
-  // Get the configured McpServer instance
-  const server = humeServer.getServer();
+  // Create and setup the McpServer
+  const mcpServer = new McpServer({
+    name: "hume",
+    version: "0.1.0",
+  });
+  
+  // Configure the server with Hume tools
+  humeServer.setupMcpServer(mcpServer);
   
   // Connect server to transport
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await mcpServer.connect(transport);
   
-  console.error(`Hume MCP Server running on stdio (workdir: ${workdir}, claudeDesktopMode: ${claudeDesktopMode})`);
+  logFn(`Hume MCP Server running on stdio (workdir: ${workdir}, claudeDesktopMode: ${claudeDesktopMode})`);
 };
 
 // If this file is run directly, start the server
 main().catch((error) => {
+  // Use console.error directly here since the logFn might not be available
   console.error("Fatal error in main():", error);
   process.exit(1);
 });

@@ -157,61 +157,43 @@ class State {
   }
 }
 
+export type LogFn = (...args: any[]) => void;
+
 export class HumeServer {
   // Immutable configuration
   private readonly instantMode: boolean;
   private readonly claudeDesktopMode: boolean;
   private readonly workdir: string;
   private readonly humeClient: HumeClient;
-  private readonly logFile?: FileHandle;
+  private readonly log: LogFn;
   
   // State
   private readonly state: State;
-  private readonly server: McpServer;
+  private server?: McpServer;
   
   constructor({
     instantMode,
     claudeDesktopMode,
     workdir,
-    logFile,
-    humeApiKey
+    humeApiKey,
+    log = console.error,
   }: {
     instantMode: boolean;
     claudeDesktopMode: boolean;
     workdir: string;
-    logFile?: FileHandle;
+    log?: LogFn;
     humeApiKey: string;
   }) {
     this.instantMode = instantMode;
     this.claudeDesktopMode = claudeDesktopMode;
     this.workdir = workdir;
-    this.logFile = logFile;
-    
-    if (this.logFile) {
-      process.on("exit", async () => {
-        await this.logFile?.close();
-      });
-    }
+    this.log = log;
     
     // Initialize client
     this.humeClient = new HumeClient({ apiKey: humeApiKey });
     
     // Initialize state
     this.state = new State(this.workdir);
-    
-    // Initialize server
-    this.server = new McpServer({
-      name: "hume",
-      version: "0.1.0",
-    });
-    
-    // Configure server with tools and resources
-    this.setupServer();
-  }
-  
-  private log(...args: any[]): void {
-    console.error(...args);
-    this.logFile?.write(JSON.stringify(args) + "\n");
   }
   
   private message(text: string): CallToolResult['content'][number] {
@@ -495,14 +477,10 @@ export class HumeServer {
     }
   }
   
-  private setupServer(): void {
-    this.server.resource("tts audio", new ResourceTemplate(`file://${this.workdir}/{generation_id}.wav`, {
-      list: (): ListResourcesResult => {
-        return {
-          resources: this.state.list()
-        };
-      }
-    }), async (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
+  public setupMcpServer(server: McpServer): McpServer {
+    this.server = server;
+    
+    const resourceHandler = async (_uri: URL, variables: Variables, _extra: unknown): Promise<ReadResourceResult> => {
       const record = this.state.findByGenerationId(variables['generation_id'] as string);
       if (!record) {
         throw new Error(`No audio found for generationId: ${variables['generation_id']}`);
@@ -515,16 +493,25 @@ export class HumeServer {
           blob: buf.toString('base64')
         }]
       };
-    });
+    };
+
+    server.resource("tts audio", 
+      new ResourceTemplate(`file://${this.workdir}/{generation_id}.wav`, {
+        list: (): ListResourcesResult => ({
+          resources: this.state.list()
+        })
+      }), 
+      resourceHandler
+    );
     
-    this.server.tool(
+    server.tool(
       "tts", 
       DESCRIPTIONS.TTS_TOOL, 
       ttsArgs(DESCRIPTIONS), 
-      this.handleTts.bind(this)
+      (args) => this.handleTts(args)
     );
 
-    this.server.tool(
+    server.tool(
       "play_previous_audio",
       DESCRIPTIONS.PLAY_PREVIOUS_AUDIO,
       {
@@ -532,10 +519,10 @@ export class HumeServer {
           .string()
           .describe("The generationId of the audio to play"),
       },
-      this.handlePlayPreviousAudio.bind(this),
+      (args) => this.handlePlayPreviousAudio(args),
     );
 
-    this.server.tool(
+    server.tool(
       "list_voices",
       DESCRIPTIONS.LIST_VOICES,
       {
@@ -554,38 +541,42 @@ export class HumeServer {
           .default(100)
           .describe("The number of voices to retrieve per page."),
       },
-      this.handleListVoices.bind(this),
+      (args) => this.handleListVoices(args),
     );
 
-    this.server.tool(
+    server.tool(
       "delete_voice",
       DESCRIPTIONS.DELETE_VOICE,
       {
         name: z.string().describe("The name of the voice to delete."),
       },
-      this.handleDeleteVoice.bind(this),
+      (args) => this.handleDeleteVoice(args),
     );
 
-    this.server.tool(
+    server.tool(
       "save_voice",
       DESCRIPTIONS.SAVE_VOICE,
       {
         generationId: z.string().describe(DESCRIPTIONS.SAVE_VOICE_GENERATION_ID),
         name: z.string().describe(DESCRIPTIONS.SAVE_VOICE_NAME),
       },
-      this.handleSaveVoice.bind(this),
+      (args) => this.handleSaveVoice(args),
     );
+    
+    return server;
   }
   
-  public getServer(): McpServer {
-    return this.server;
-  }
-  
-  public async getToolDefinitions(): Promise<Array<Tool>> {
-    this.server.sendResourceListChanged();
+  public async getToolDefinitions(server?: McpServer): Promise<Array<Tool>> {
+    const mcpServer = server || this.server;
+    
+    if (!mcpServer) {
+      throw new Error("McpServer not initialized. Call setupMcpServer first.");
+    }
+    
+    mcpServer.sendResourceListChanged();
     
     return (
-      await (this.server.server as any)._requestHandlers.get("tools/list")({
+      await (mcpServer.server as any)._requestHandlers.get("tools/list")({
         method: "tools/list",
       })
     ).tools as Array<Tool>;

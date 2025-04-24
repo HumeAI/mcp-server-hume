@@ -1,4 +1,5 @@
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DESCRIPTIONS, HumeServer } from '../server.js';
 import { ScenarioTool, TranscriptEntry } from './roleplay.js';
 import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
@@ -16,9 +17,17 @@ export const getHumeMcpTools = async (args: {
     instantMode: true,
     claudeDesktopMode: process.env.CLAUDE_DESKTOP_MODE !== 'false',
     workdir: process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts"),
+    log: console.error,
     humeApiKey: process.env.HUME_API_KEY!
   });
-  const tools = await humeServer.getToolDefinitions();
+  
+  const server = new McpServer({
+    name: "hume",
+    version: "0.1.0",
+  });
+  
+  humeServer.setupMcpServer(server);
+  const tools = await humeServer.getToolDefinitions(server);
   const scenarioTools: Record<string, ScenarioTool> = {};
   
   const anthropicHandler = (toolName: string) => async (input: unknown): Promise<ToolResultBlockParam['content']> => {
