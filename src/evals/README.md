@@ -1,10 +1,12 @@
-# MCP Server Hume - Evaluation Framework
-
-This directory contains the evaluation framework for testing the effectiveness of tool descriptions in various scenarios with the Hume TTS integration.
+# Evals
 
 ## Overview
 
-The framework simulates real-world interactions between AI agents and users to measure how well different tool descriptions enable the agent to understand and correctly use the TTS tools.
+When developing the MCP Server, we noticed that using it could be really annoying. The assistant would make unwanted requests, use the wrong voice, fail to apply continuation appropriately, and fail to make reasonable assumptions about the user's intent in using the tools, unless they user was irritatingly specific in prompting it.
+
+Improving the tool descriptions helped somewhat, but was somewhat unpredictable. We wanted to be disciplined about our approach, and so we developed this evaluation framework.
+
+In this framework, there are three assistants, a "roleplayer", an "agent", and a "scorer". The roleplayer pretends to be a user of the MCP server and is given a realistic scenario to act out. The agent acts as an assistant given access to the tools exposed by the MCP server. Once the roleplayer determines the chat is finished, the "scorer" evaluates the chat transcript according to a set of criteria that reflect what we believe to be good behavior of an assistant using this MCP model.
 
 ## Running Evaluations
 
@@ -24,44 +26,3 @@ bun run src/evals/index.ts run --all -c 3
 # Run with custom tool descriptions
 bun run src/evals/index.ts run --all --descriptions improved-descriptions.json
 ```
-
-## Evaluation Scenarios
-
-### Basic Scenarios
-
-- **Screen Reader**: Tests basic content reading capabilities
-- **Picky Screen Reader**: Tests handling of specific voice parameters
-- **Habitual Screen Reader**: Tests continuation across multiple text segments
-
-### Voice Management Scenarios
-
-- **Voice Designer**: Tests voice creation and customization
-- **Voice Explorer**: Tests browsing and selecting from voice libraries
-
-### Creative Scenarios
-
-- **AI Poet**: Tests poetic content generation and appropriate voicing
-- **AI Playwright**: Tests dialogue reading with different character voices
-
-## Framework Components
-
-- **Roleplay**: Simulates user-agent conversations with specific goals
-- **Scoring**: Evaluates performance against predefined criteria
-- **Reporting**: Generates detailed reports and highlights areas for improvement
-
-## Results Analysis
-
-Evaluation results are saved to the specified output directory with:
-
-- Individual scenario results with full transcripts
-- Consolidated reports with average scores and low-score analysis
-- Timestamp-based organization for comparing results over time
-
-## Customizing Tool Descriptions
-
-The framework supports testing different versions of tool descriptions:
-
-1. Default descriptions (from the main codebase)
-2. Custom descriptions loaded from JSON files
-
-This enables iterative refinement of tool descriptions based on performance metrics.

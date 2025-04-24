@@ -50,20 +50,6 @@ Options:
   --help, -h                 Show help message
 ```
 
-
-## Development
-
-```bash
-# Build the project
-bun run build
-
-# Run TypeScript files directly
-bun run src/path/to/file.ts
-
-# Type check
-bunx tsc --noEmit
-```
-
 ## Evaluation Framework
 
 The project includes a [comprehensive evaluation framework](src/evals/README.md) that measures how effectively AI agents can utilize the Hume TTS tools across various real-world scenarios.
