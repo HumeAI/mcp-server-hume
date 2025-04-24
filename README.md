@@ -4,7 +4,7 @@ Implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) f
 
 Octave TTS is [the world's best performing, expressive Speech LLM](https://www.hume.ai/blog/octave-the-first-text-to-speech-model-that-understands-what-its-saying). It understands and *performs* the source text, it doesn't just pronounce it.
 
-The Hume MCP Server allows you to use MCP Clients like Claude Desktop, Cursor, Windsurf to collaborate with AI assistants on your voice projects.
+The Hume MCP Server allows you to use MCP Clients like [Claude Desktop](https://claude.ai/desktop), [Cursor](https://cursor.sh/), [Windsurf](https://www.windsurf.io/) to collaborate with AI assistants on your voice projects.
 
 ## Quickstart
 
@@ -41,7 +41,6 @@ The server exposes the following MCP tools:
 - **save_voice**: Save a generated voice to your library
 - **delete_voice**: Remove a voice from your library
 
-
 ### Command Line Options
 
 ```
@@ -68,12 +67,6 @@ bunx tsc --noEmit
 ## Evaluation Framework
 
 The project includes a [comprehensive evaluation framework](src/evals/README.md) that measures how effectively AI agents can utilize the Hume TTS tools across various real-world scenarios.
-
-## Architecture
-
-- **MCP Server**: Implements the Model Context Protocol for standardized tool interactions
-- **TTS Integration**: Connects to Hume's TTS API for speech synthesis
-- **Audio Management**: Handles generation, storage, and playback of audio files
 
 ## Environment Variables
 
