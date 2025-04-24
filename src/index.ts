@@ -14,12 +14,12 @@ const cli = meow(
 
   Options
     --workdir, -w <path>      Set working directory for audio files (default: $WORKDIR or system temp)
-    --claude-desktop-mode, -c Enable/disable Claude desktop mode (default: $CLAUDE_DESKTOP_MODE or true)
+    --embedded-audio-mode     Enable/disable embedded audio mode (default: $EMBEDDED_AUDIO_MODE or false)
     --help, -h                Show this help message
 
   Environment variables
     WORKDIR                   Alternative to --workdir
-    CLAUDE_DESKTOP_MODE       Alternative to --claude-desktop-mode (set to 'false' to disable)
+    EMBEDDED_AUDIO_MODE       Alternative to --embedded-audio-mode (set to 'true' to enable)
     HUME_API_KEY              Required Hume API key
 `,
   {
@@ -30,10 +30,9 @@ const cli = meow(
         shortFlag: "w",
         default: process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts"),
       },
-      claudeDesktopMode: {
+      embeddedAudioMode: {
         type: "boolean",
-        shortFlag: "c",
-        default: process.env.CLAUDE_DESKTOP_MODE !== "false",
+        default: process.env.EMBEDDED_AUDIO_MODE === "true",
       },
       instantMode: {
         type: "boolean",
@@ -45,7 +44,7 @@ const cli = meow(
 
 const main = async () => {
   // Extract flags from CLI
-  const { workdir, claudeDesktopMode, instantMode } = cli.flags;
+  const { workdir, embeddedAudioMode, instantMode } = cli.flags;
 
   // Set up logging
   const logFile = await fs.open("/tmp/mcp-server-hume.log", "a");
@@ -73,7 +72,7 @@ const main = async () => {
   const humeServer = new HumeServer({
     instantMode,
     workdir,
-    claudeDesktopMode,
+    embeddedAudioMode,
     log: logFn,
     humeApiKey: process.env.HUME_API_KEY,
   });
@@ -92,7 +91,7 @@ const main = async () => {
   await mcpServer.connect(transport);
 
   logFn(
-    `Hume MCP Server running on stdio (workdir: ${workdir}, claudeDesktopMode: ${claudeDesktopMode})`,
+    `Hume MCP Server running on stdio (workdir: ${workdir}, embeddedAudioMode: ${embeddedAudioMode})`,
   );
 };
 

@@ -178,7 +178,7 @@ export type LogFn = (...args: any[]) => void;
 export class HumeServer {
   // Immutable configuration
   private readonly instantMode: boolean;
-  private readonly claudeDesktopMode: boolean;
+  private readonly embeddedAudioMode: boolean;
   private readonly workdir: string;
   private readonly humeClient: HumeClient;
   private readonly log: LogFn;
@@ -189,19 +189,19 @@ export class HumeServer {
 
   constructor({
     instantMode,
-    claudeDesktopMode,
+    embeddedAudioMode,
     workdir,
     humeApiKey,
     log = console.error,
   }: {
     instantMode: boolean;
-    claudeDesktopMode: boolean;
+    embeddedAudioMode: boolean;
     workdir: string;
     log?: LogFn;
     humeApiKey: string;
   }) {
     this.instantMode = instantMode;
-    this.claudeDesktopMode = claudeDesktopMode;
+    this.embeddedAudioMode = embeddedAudioMode;
     this.workdir = workdir;
     this.log = log;
 
@@ -266,7 +266,7 @@ export class HumeServer {
       return { text, embedded };
     });
 
-    if (this.claudeDesktopMode) {
+    if (!this.embeddedAudioMode) {
       return {
         content: [...messages.map(({ text }) => text)],
       };

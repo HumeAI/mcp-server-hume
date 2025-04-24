@@ -1,65 +1,56 @@
-# MCP Server Hume
+# @humeai/mcp-server-hume
 
-A Model Context Protocol (MCP) server implementation for Hume AI's text-to-speech service, enabling AI agents to interact with Hume's TTS capabilities through a standardized interface.
+Implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) for Hume AI's Octave Text-To-Speech.
 
-## Features
+Octave TTS is [the world's best performing, expressive Speech LLM](https://www.hume.ai/blog/octave-the-first-text-to-speech-model-that-understands-what-its-saying). It understands and *performs* the source text, it doesn't just pronounce it.
 
-- Synthesize speech from text with customizable voices and parameters
-- Save, manage, and reuse voice profiles
-- Stream audio generation and playback
-- Support for continuation in long-form content
-- Cross-platform audio playback via ffplay
+The Hume MCP Server allows you to use MCP Clients like Claude Desktop, Cursor, Windsurf to collaborate with AI assistants on your voice projects.
+
+## Quickstart
+
+Copy the following code into your client's MCP configuration (for example, inside the `.mcpServer` property of the `claude_desktop.json` or the equivalent)
+
+```json
+{
+    ...
+    "hume": {
+        "command": "npx",
+        "args": [
+            "@humeai/mcp-server"
+        ],
+        "env": {
+            "HUME_API_KEY": "<your_hume_api_key>",
+        }
+    }
+}
+```
 
 ## Prerequisites
+- An account and API Key from [Hume AI](https://platform.hume.ai/)
+- [Node.js](https://nodejs.org/)
+- (optional) A command-line audio player
+  * [ffplay](https://ffmpeg.org/ffplay.html) from FFMpeg is recommended, but the server will attempt to detect and use any of several common players.
 
-- [Bun](https://bun.sh/) JavaScript runtime
-- [ffplay](https://ffmpeg.org/ffplay.html) for audio playback (part of ffmpeg)
-- Hume AI API key
+### Available Tools
 
-## Installation
+The server exposes the following MCP tools:
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd mcp-server-hume
+- **tts**: Synthesize (and play) speech from text
+- **play_previous_audio**: Replay previously generated audio
+- **list_voices**: List available voices
+- **save_voice**: Save a generated voice to your library
+- **delete_voice**: Remove a voice from your library
 
-# Install dependencies
-bun install
-```
-
-## Usage
-
-### Run the MCP Server
-
-```bash
-# Run with your Hume API key
-HUME_API_KEY=your_key_here bun index.js
-
-# Run with custom working directory
-HUME_API_KEY=your_key_here WORKDIR=/path/to/custom/dir bun index.js
-
-# Or use command line options
-HUME_API_KEY=your_key_here bun index.js --workdir /path/to/custom/dir --claude-desktop-mode false
-```
 
 ### Command Line Options
 
 ```
 Options:
   --workdir <path>           Set the working directory for audio files
-  --claude-desktop-mode      Enable Claude desktop mode (true/false)
+  --embedded-audio-mode      Enable embedded audio mode (true/false)
   --help, -h                 Show help message
 ```
 
-### Available Tools
-
-The server exposes the following MCP tools:
-
-- **tts**: Synthesize speech from text
-- **play_previous_audio**: Replay previously generated audio
-- **list_voices**: List available voices
-- **save_voice**: Save a generated voice to your library
-- **delete_voice**: Remove a voice from your library
 
 ## Development
 
@@ -88,9 +79,5 @@ The project includes a [comprehensive evaluation framework](src/evals/README.md)
 
 - `HUME_API_KEY`: Your Hume AI API key (required)
 - `WORKDIR`: Working directory for audio files (default: OS temp directory + "/hume-tts")
-- `CLAUDE_DESKTOP_MODE`: Enable/disable Claude desktop mode (default: true, set to 'false' to disable)
+- `EMBEDDED_AUDIO_MODE`: Enable/disable embedded audio mode (default: false, set to 'true' to enable)
 - `ANTHROPIC_API_KEY`: Required for running evaluations
-
-## License
-
-ISC

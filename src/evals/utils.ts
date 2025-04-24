@@ -15,7 +15,7 @@ export const getHumeMcpTools = async (args: {
   const { descriptions, handler, displayUse, displayResult } = args;
   const humeServer = new HumeServer({
     instantMode: true,
-    claudeDesktopMode: process.env.CLAUDE_DESKTOP_MODE !== "false",
+    embeddedAudioMode: process.env.EMBEDDED_AUDIO_MODE === "true",
     workdir: process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts"),
     log: console.error,
     humeApiKey: process.env.HUME_API_KEY!,
