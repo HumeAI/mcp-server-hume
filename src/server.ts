@@ -314,7 +314,8 @@ export class HumeServer {
     const request: Hume.tts.PostedTts = {
       utterances,
       stripHeaders: true,
-      instantMode: this.instantMode && !voiceName && !continuationOf,
+      // instantMode must be enabled via the command-line flag, and then you must either be providing a voiceName or a continuationOf generation
+      instantMode: this.instantMode && (!!voiceName || !!continuationOf),
     };
 
     if (context) {
