@@ -1,4 +1,15 @@
-# @humeai/mcp-server
+<div align="center">
+  <img src="https://storage.googleapis.com/hume-public-logos/hume/hume-banner.png">
+  <h1>Hume MCP Server</h1>
+  <p>
+    <strong>Collaborate with AI assistants on your Text-to-Speech projects</strong>
+  </p>
+  <p>
+    <a href="https://dev.hume.ai/docs/text-to-speech-tts/mcp-server">📘 Documentation</a> •
+    <a href="https://discord.com/invite/humeai">💬 Join us on Discord</a> •
+    <a href="https://dev.hume.ai/docs/introduction/api-key">🔐 Getting your API Keys</a>
+  </p>
+</div>
 
 Implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) for Hume AI's Octave Text-To-Speech.
 
