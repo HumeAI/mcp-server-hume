@@ -1,6 +1,6 @@
 {
   "name": "@humeai/mcp-server",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "main": "build/index.js",
   "type": "module",
   "scripts": {
