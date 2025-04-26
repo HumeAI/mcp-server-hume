@@ -7,6 +7,7 @@ import { voiceDesignerScenario } from "./voice-designer.js";
 import { voiceExplorerScenario } from "./voice-explorer.js";
 import { aiPoetScenario } from "./ai-poet.js";
 import { aiPlaywrightScenario } from "./ai-playwright.js";
+import { quoteNarratorScenario } from "./quote-narrator.js";
 
 // Get all available scenarios
 export const getScenarios = async (
@@ -20,5 +21,6 @@ export const getScenarios = async (
     "voice-explorer": await voiceExplorerScenario(descriptions),
     "ai-poet": await aiPoetScenario(descriptions),
     "ai-playwright": await aiPlaywrightScenario(descriptions),
+    "quote-narrator": await quoteNarratorScenario(descriptions),
   };
 };
