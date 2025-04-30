@@ -321,6 +321,7 @@ export class HumeServer {
       stripHeaders: true,
       // instantMode must be enabled via the command-line flag, and then you must either be providing a voiceName or a continuationOf generation
       instantMode: this.instantMode && (!!voiceName || !!continuationOf),
+      format: {type: "wav"},
     };
 
     if (context) {
