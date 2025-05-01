@@ -15,11 +15,13 @@ Implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) f
 
 Octave TTS is [the world's best performing, expressive Speech LLM](https://www.hume.ai/blog/octave-the-first-text-to-speech-model-that-understands-what-its-saying). It understands and *performs* the source text, it doesn't just pronounce it.
 
-The Hume MCP Server allows you to use MCP Clients like [Claude Desktop](https://claude.ai/desktop), [Cursor](https://cursor.sh/), [Windsurf](https://www.windsurf.io/) to collaborate with AI assistants on your voice projects.
+The Hume MCP Server allows you to use MCP Client Applications like [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.sh/), [Windsurf](https://www.windsurf.io/) to collaborate with AI assistants on your voice projects.
+
+See [this video](https://www.loom.com/share/b9fb74163db44be28e9adcb61030e368) for a demonstration of using the MCP Server to narrate a scene from an audiobook.
 
 ## Quickstart
 
-Copy the following code into your client's MCP configuration (for example, inside the `.mcpServer` property of the `claude_desktop.json` or the equivalent)
+Copy the following into your client's MCP configuration (for example, inside the `.mcpServers` property of `claude_desktop_config.json` for Claude Desktop, or of the `mcp.json` for Cursor).
 
 ```json
 {
