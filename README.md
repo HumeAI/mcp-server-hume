@@ -11,7 +11,7 @@
   </p>
 </div>
 
-The Hume [MCP](https://modelcontextprotocol.io)) Server gives you the the ability to use [Octave Text to Speech](https://dev.hume.ai/docs/text-to-speech-tts/overview) from within an AI Chat, using an [MCP Client Application](https://modelcontextprotocol.io/clients) such as [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.sh/), or [Windsurf](https://www.windsurf.io/).
+The Hume [MCP](https://modelcontextprotocol.io) Server gives you the the ability to use [Octave Text to Speech](https://dev.hume.ai/docs/text-to-speech-tts/overview) from within an AI Chat, using an [MCP Client Application](https://modelcontextprotocol.io/clients) such as [Claude Desktop](https://claude.ai/download), [Cursor](https://cursor.sh/), or [Windsurf](https://www.windsurf.io/).
 
 Octave TTS is the [first text-to-speech system built on LLM intelligence](https://www.hume.ai/blog/octave-the-first-text-to-speech-model-that-understands-what-its-saying). Octave is a speech-language model that understands what words mean in context, unlocking a new level of expressiveness and nuance. It *performs* the source text, it doesn't just pronounce it.
 
