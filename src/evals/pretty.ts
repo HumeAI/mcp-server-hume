@@ -80,7 +80,8 @@ export const formatEvalResult = (evalResult: EvalResult): string => {
 
   heading("Scores")
   for (const score of evalResult.scores) {
-    out(`${score.name}: ${score.score}`);
+    const scoreValue = typeof score.score === "number" ? score.score.toFixed(2) : score.score;
+    out(`${score.name}: ${scoreValue}`);
     out(`  ${score.reason}`);
     linebreak();
   }

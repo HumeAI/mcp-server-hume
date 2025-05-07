@@ -1,13 +1,13 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 
-const specialSymbolsInstructions =
+const specialSymbolsCriteria =
   "The agent should not include symbols within utterance text, besides standard punctuation like commas, exclamation points, quotes, dashes, etc. The agent should replace non-pronouncable symbols with natural speech that communicates the same intent, if it is obvious how. If there is no obvious way to represent the special symbols in natural language, the assistant should either ask the user for instructions first, or replace the unpronounceable text with a fitting placeholder in the text input.";
-const emojiInstructions =
+const emojiCriteria =
   "The agent should replace emojis in utterance text with natural language that describes the emoji when contextually appropriate, or redact them when not.";
-const numberedListsInstructions =
+const numberedListsCriteria =
   "Numbered lists item should be listed using natural language like 'first, second, third...' within utterance text.";
-const codeSnippetInstructions =
+const codeSnippetCriteria =
   "The agent should not include multi-line code snippets within utterance text. Single variable names should be pronounced within paragraphs of prose. It is preferred to summarize the content or functionality of the code snippet without using the variable names when effective summarization is possible without including the variable names.";
 
 export const commonCriteria = {
@@ -16,18 +16,15 @@ export const commonCriteria = {
     "The agent should not ask for confirmation to do something the user has already asked for.",
   avoid_repeated_playback:
     "The agent should not play the same content multiple times, unless requested. For example, the agent should not unnecessarily call the `play_previous_audio` tool after calling the `tts` call.",
-  incremental_retrieval:
-    "The agent should incrementally retrieve user content and play it back in chunks, rather than trying to retrieve the entire post at once.",
   incremental_playback:
     "Each utterance passed to the tts tool should be no longer than a single paragraph. Each call to the tts tool should be no longer than three paragraphs.",
-  verbosity: "The agent should be concise and avoid unnecessary verbosity.",
   continuation_used_properly:
-    "The agent should specify the continuationOf when calling the tts tool in all calls except for the initial one, unless the user has requested a restart or a different voice.",
-  unpronounceable_text_instructions: `
-    ${specialSymbolsInstructions}
-    ${emojiInstructions}
-    ${numberedListsInstructions}
-    ${codeSnippetInstructions}
+    "If there are multiple calls to the tts tool that draw from the same source text, the agent should specify the continuationOf parameter from all calls except for the initial one. The agent should NOT use continuationOf when switching between source texts.",
+  unpronounceable_text: `
+    ${specialSymbolsCriteria}
+    ${emojiCriteria}
+    ${numberedListsCriteria}
+    ${codeSnippetCriteria}
   `,
 };
 
