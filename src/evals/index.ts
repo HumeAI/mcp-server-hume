@@ -1,26 +1,22 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { DESCRIPTIONS } from "../server.js";
-import { Roleplay, RoleplayResult, TranscriptEntry } from "./roleplay.js";
-import { scoreCriteria, ScoredCriterion } from "./scorer.js";
+import { EvalResult, Roleplay, TranscriptEntry } from "./roleplay.js";
+import { scoreCriteria, } from "./scorer.js";
 import { prettyTranscriptEntry } from "./utils.js";
 import Bottleneck from "bottleneck";
 import { getScenarios } from "./scenario/index.js";
 import { prettyPrintFile } from "./pretty.js";
-import { EvalResult } from "./scenario/types.js";
 
-// Configure a bottleneck limiter for Anthropic API calls
 const anthropicLimiter = new Bottleneck({
-  maxConcurrent: 10, // Allow up to 10 concurrent requests
+  maxConcurrent: 10,
 });
 
-// Setup handling for rate limit and overloaded errors
-anthropicLimiter.on("failed", (error: any, jobInfo) => {
+anthropicLimiter.on("failed", (error: any) => {
   const errorObj = error.error?.error || error;
   const statusCode = error.status || 0;
   const errorType = errorObj.type;
 
-  // Check for rate limits or service overload
   if (
     statusCode === 429 ||
     errorType === "rate_limit_error" ||
@@ -30,38 +26,30 @@ anthropicLimiter.on("failed", (error: any, jobInfo) => {
       `API error: ${errorType || statusCode}, pausing all requests for 60 seconds`,
     );
 
-    // Stop all requests for 60 seconds
     anthropicLimiter.updateSettings({
-      reservoir: 0, // No requests allowed
+      reservoir: 0,
     });
 
-    // Resume after 60 seconds
     setTimeout(() => {
       console.error("Resuming API requests");
       anthropicLimiter.updateSettings({
-        reservoir: null, // Reset to unlimited
+        reservoir: null,
       });
     }, 60000);
 
-    // Retry this job after a delay
-    return 1000; // 1 second delay before retry
+    return 1000;
   }
 
   console.error(
     `API error not related to rate limiting: ${JSON.stringify(errorObj)}`,
   );
-  // For other errors, don't retry
   return null;
 });
 
-// Throttled wrapper for any Anthropic API operation
 const withAnthropicThrottle = <T>(operation: () => Promise<T>): Promise<T> => {
   return anthropicLimiter.schedule(() => operation());
 };
 
-// Using shared EvalResult type from types.js
-
-// Run a single evaluation with the specified scenario
 const runSingleEval = async (
   scenarioName: string,
   outputPath: string,
@@ -84,15 +72,13 @@ const runSingleEval = async (
     `Running scenario: ${scenario.roleplay.name} with maxTurns: ${scenario.maxTurns}`,
   );
 
-  // Create roleplay with throttle-aware methods
   const roleplay = new Roleplay(
     process.env.ANTHROPIC_API_KEY,
     scenario.roleplay,
     modelName,
-    withAnthropicThrottle, // Pass the throttle wrapper
+    withAnthropicThrottle,
   );
 
-  // Start with the initial message
   const initialMessage: TranscriptEntry = {
     type: "spoke",
     speaker: "roleplayer",
@@ -102,12 +88,10 @@ const runSingleEval = async (
   const transcript: any[] = [initialMessage];
   console.error(prettyTranscriptEntry(initialMessage));
 
-  // Iterate through transcript entries as they come in
   for await (const entry of roleplay) {
     transcript.push(entry);
     console.error(prettyTranscriptEntry(entry));
 
-    // Break after maxTurns
     if (transcript.length >= scenario.maxTurns) {
       break;
     }
@@ -115,7 +99,6 @@ const runSingleEval = async (
 
   const result = roleplay.getResult();
 
-  // Score the criteria with throttling
   const scores = await withAnthropicThrottle(() =>
     scoreCriteria(process.env.ANTHROPIC_API_KEY!, scenario.criteria, {
       transcript,
@@ -123,7 +106,6 @@ const runSingleEval = async (
     }),
   );
 
-  // Write results to the output path
   const evalResult = { transcript, result, scores };
   await fs.writeFile(outputPath, JSON.stringify(evalResult, null, 2));
   console.error(`Results saved to ${outputPath}`);
@@ -131,7 +113,6 @@ const runSingleEval = async (
   return evalResult;
 };
 
-// Run multiple evaluations in parallel
 const runMultipleEvals = async (
   scenarioName: string,
   count: number,
@@ -140,7 +121,6 @@ const runMultipleEvals = async (
   descriptions: typeof DESCRIPTIONS = DESCRIPTIONS,
   customTimestamp?: string,
 ): Promise<EvalResult[]> => {
-  // Ensure output directory exists
   await fs.mkdir(outputDir, { recursive: true });
 
   const descriptionsSource =
@@ -150,7 +130,6 @@ const runMultipleEvals = async (
 
   console.error(`Running ${count} evaluations of ${scenarioName} in parallel`);
 
-  // Prepare evaluation tasks
   const evalTasks = Array.from({ length: count }, (_, i) => {
     const outputPath = path.join(
       outputDir,
@@ -164,7 +143,6 @@ const runMultipleEvals = async (
     };
   });
 
-  // Run all evaluations in parallel
   const results = await Promise.all(
     evalTasks.map(async (task) => {
       console.error(`\nStarting evaluation ${task.index} of ${count}`);
@@ -174,10 +152,8 @@ const runMultipleEvals = async (
     }),
   );
 
-  // Print summary to console
   console.error(`\nCompleted ${count} evaluations of ${scenarioName}`);
 
-  // Calculate and show average scores
   const criteriaMap = new Map<string, { sum: number; count: number }>();
 
   results.forEach((result) => {
@@ -199,7 +175,6 @@ const runMultipleEvals = async (
   return results;
 };
 
-// Run multiple scenarios with summarized results
 const run = async (
   scenarioNames: string[],
   count: number,
@@ -207,7 +182,6 @@ const run = async (
   modelName: string = "claude-3-5-haiku-latest",
   descriptions: typeof DESCRIPTIONS = DESCRIPTIONS,
 ): Promise<void> => {
-  // Ensure output directory exists
   await fs.mkdir(outputDir, { recursive: true });
 
   const descriptionsSource =
@@ -221,7 +195,6 @@ const run = async (
   const allResults: Record<string, EvalResult[]> = {};
   const allScores: Record<string, Record<string, number[]>> = {};
 
-  // Run all scenarios in parallel
   const scenarioPromises = scenarioNames.map(async (scenarioName) => {
     console.error(`\n==== Starting scenario: ${scenarioName} ====`);
 
@@ -237,17 +210,13 @@ const run = async (
     return { scenarioName, results };
   });
 
-  // Wait for all scenarios to complete
   const completedScenarios = await Promise.all(scenarioPromises);
 
-  // Process results
   for (const { scenarioName, results } of completedScenarios) {
     allResults[scenarioName] = results;
 
-    // Collect scores for this scenario
     allScores[scenarioName] = {};
 
-    // Gather all criteria used in this scenario
     const allCriteriaForScenario = new Set<string>();
     results.forEach((result) => {
       result.scores.forEach((score) => {
@@ -255,7 +224,6 @@ const run = async (
       });
     });
 
-    // Collect all scores for each criterion
     allCriteriaForScenario.forEach((criterion) => {
       allScores[scenarioName][criterion] = results.map((result) => {
         const score = result.scores.find((s) => s.name === criterion);
@@ -264,10 +232,6 @@ const run = async (
     });
   }
 
-  // Create a consolidated results summary
-  // This will include average scores for all criteria and highlight low scores
-
-  // Global average scores across all scenarios
   const globalScores: Record<
     string,
     {
@@ -282,7 +246,6 @@ const run = async (
     }
   > = {};
 
-  // Collect all scores and low score reasons from all scenarios
   for (const scenarioName of scenarioNames) {
     const scenarioResults = allResults[scenarioName];
 
@@ -290,7 +253,6 @@ const run = async (
       result.scores.forEach((scoredCriterion) => {
         const { name, score, reason } = scoredCriterion;
 
-        // Initialize criterion in global scores if not exists
         if (!globalScores[name]) {
           globalScores[name] = {
             totalScore: 0,
@@ -299,11 +261,9 @@ const run = async (
           };
         }
 
-        // Add score to global total
         globalScores[name].totalScore += score;
         globalScores[name].count += 1;
 
-        // Record low scores with reasons
         if (score <= 0.6) {
           globalScores[name].lowScoreReasons.push({
             scenario: scenarioName,
@@ -316,7 +276,6 @@ const run = async (
     });
   }
 
-  // Prepare the consolidated report
   const consolidatedReport = {
     runInfo: {
       scenarios: scenarioNames,
@@ -331,18 +290,16 @@ const run = async (
           criterion,
           averageScore,
           occurrences: data.count,
-          lowScores: data.lowScoreReasons.sort((a, b) => a.score - b.score), // Sort by score ascending
+          lowScores: data.lowScoreReasons.sort((a, b) => a.score - b.score),
         };
       })
-      .sort((a, b) => a.averageScore - b.averageScore), // Sort criteria by average score
+      .sort((a, b) => a.averageScore - b.averageScore),
   };
 
-  // Write consolidated report to file
   const reportPath = path.join(outputDir, `eval-report-${timestamp}.json`);
   await fs.writeFile(reportPath, JSON.stringify(consolidatedReport, null, 2));
   console.error(`\nConsolidated evaluation report saved to ${reportPath}`);
 
-  // Print summary statistics to console
   console.error("\n==== Evaluation Summary ====");
   console.error(`Scenarios: ${scenarioNames.join(", ")}`);
   console.error(
@@ -356,7 +313,6 @@ const run = async (
     );
   });
 
-  // Print low score highlights
   const lowScoreCriteria = consolidatedReport.criteriaResults.filter(
     (c) => c.lowScores.length > 0,
   );
@@ -368,7 +324,6 @@ const run = async (
         `\n  ${criteria.criterion} - Avg: ${criteria.averageScore.toFixed(2)}, Low scores: ${criteria.lowScores.length}`,
       );
 
-      // Print up to 3 lowest score reasons per criterion
       criteria.lowScores.slice(0, 3).forEach((lowScore) => {
         console.error(
           `    • ${lowScore.scenario} (${lowScore.score.toFixed(2)}): ${lowScore.reason.split("\n")[0]}`,
@@ -378,19 +333,15 @@ const run = async (
   }
 };
 
-// CLI command types and arguments interfaces
 
-// Help command
 interface HelpArgs {
   command: "help";
 }
 
-// List command
 interface ListArgs {
   command: "list";
 }
 
-// Run command
 interface RunArgs {
   command: "run";
   scenarioNames: string[];
@@ -401,16 +352,13 @@ interface RunArgs {
   runAllScenarios: boolean;
 }
 
-// Pretty command
 interface PrettyArgs {
   command: "pretty";
   filePath: string;
 }
 
-// Union type for all command arguments
 type CliArgs = HelpArgs | ListArgs | RunArgs | PrettyArgs;
 
-// Print help message
 const printHelp = (): void => {
   console.log(`
 Usage:
@@ -436,17 +384,14 @@ Examples:
   `);
 };
 
-// Parse help command
 const parseHelpCommand = (): HelpArgs => {
   return { command: "help" };
 };
 
-// Parse list command
 const parseListCommand = (): ListArgs => {
   return { command: "list" };
 };
 
-// Parse run command
 const parseRunCommand = (args: string[]): RunArgs => {
   const runArgs: RunArgs = {
     command: "run",
@@ -493,7 +438,6 @@ const parseRunCommand = (args: string[]): RunArgs => {
   return runArgs;
 };
 
-// Parse pretty command
 const parsePrettyCommand = (args: string[]): PrettyArgs => {
   if (args.length < 1) {
     console.error("Error: missing file path for pretty command");
@@ -506,7 +450,6 @@ const parsePrettyCommand = (args: string[]): PrettyArgs => {
   };
 };
 
-// Parse command line arguments
 const parseCommandArgs = (args: string[]): CliArgs => {
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
     return parseHelpCommand();
@@ -530,7 +473,6 @@ const parseCommandArgs = (args: string[]): CliArgs => {
   process.exit(1);
 };
 
-// List all available scenarios
 const listScenarios = async (): Promise<void> => {
   const scenarios = await getScenarios(DESCRIPTIONS);
 
@@ -540,7 +482,6 @@ const listScenarios = async (): Promise<void> => {
   }
 };
 
-// Load custom descriptions from a file
 const loadCustomDescriptions = async (
   filePath: string,
 ): Promise<typeof DESCRIPTIONS> => {
@@ -554,17 +495,14 @@ const loadCustomDescriptions = async (
   }
 };
 
-// Handle list command
 const handleListCommand = async (_args: ListArgs): Promise<void> => {
   await listScenarios();
 };
 
-// Handle pretty command
 const handlePrettyCommand = async (args: PrettyArgs): Promise<void> => {
   await prettyPrintFile(args.filePath);
 };
 
-// Handle run command
 const handleRunCommand = async (args: RunArgs): Promise<void> => {
   const {
     scenarioNames,
@@ -575,17 +513,14 @@ const handleRunCommand = async (args: RunArgs): Promise<void> => {
     runAllScenarios,
   } = args;
 
-  // Load available scenarios
   const availableScenarios = await getScenarios(DESCRIPTIONS);
   const availableScenarioNames = Object.keys(availableScenarios);
 
-  // Determine which scenarios to run
   let scenariosToRun: string[] = [];
 
   if (runAllScenarios) {
     scenariosToRun = availableScenarioNames;
   } else if (scenarioNames.length > 0) {
-    // Validate specified scenarios
     for (const name of scenarioNames) {
       if (!availableScenarioNames.includes(name)) {
         console.error(
@@ -600,17 +535,14 @@ const handleRunCommand = async (args: RunArgs): Promise<void> => {
     process.exit(1);
   }
 
-  // Load custom descriptions if specified
   let descriptions = DESCRIPTIONS;
   if (descriptionsPath) {
     descriptions = await loadCustomDescriptions(descriptionsPath);
   }
 
-  // Run scenarios
   await run(scenariosToRun, count, outputDir, modelName, descriptions);
 };
 
-// Execute the command with the parsed arguments
 const executeCommand = async (cliArgs: CliArgs): Promise<void> => {
   switch (cliArgs.command) {
     case "help":
@@ -631,7 +563,6 @@ const executeCommand = async (cliArgs: CliArgs): Promise<void> => {
   }
 };
 
-// Main function
 const main = async (): Promise<void> => {
   const args = process.argv.slice(2);
   const cliArgs = parseCommandArgs(args);
@@ -639,7 +570,6 @@ const main = async (): Promise<void> => {
   process.exit(0);
 };
 
-// Execute main function
 if (require.main === module) {
   await main();
 }

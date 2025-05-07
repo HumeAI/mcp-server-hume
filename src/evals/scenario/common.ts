@@ -1,27 +1,6 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import { ScenarioTool, TranscriptEntry, RoleplayResult } from "../roleplay.js";
-import { ScoredCriterion } from "../scorer.js";
 
-// Evaluation result type shared across the codebase
-export type EvalResult = {
-  transcript: TranscriptEntry[];
-  result: RoleplayResult | "incomplete";
-  scores: ScoredCriterion[];
-};
-
-export type EvalScenario = {
-  roleplay: {
-    name: string;
-    tools: Record<string, ScenarioTool>;
-    initialMessage: string;
-    roleplayerPrompt: string;
-  };
-  criteria: Record<string, string>;
-  maxTurns: number;
-};
-
-// Common criteria used across multiple scenarios
 const specialSymbolsInstructions =
   "The agent should not include symbols within utterance text, besides standard punctuation like commas, exclamation points, quotes, dashes, etc. The agent should replace non-pronouncable symbols with natural speech that communicates the same intent, if it is obvious how. If there is no obvious way to represent the special symbols in natural language, the assistant should either ask the user for instructions first, or replace the unpronounceable text with a fitting placeholder in the text input.";
 const emojiInstructions =

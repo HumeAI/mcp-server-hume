@@ -12,7 +12,7 @@ export const getHumeMcpTools = async (args: {
   displayUse: (input: unknown) => string;
   displayResult: (result: ToolResultBlockParam["content"]) => string;
 }): Promise<Record<string, ScenarioTool>> => {
-  const { descriptions, handler, displayUse, displayResult } = args;
+  const { handler, displayUse, displayResult } = args;
   const humeServer = new HumeServer({
     instantMode: true,
     embeddedAudioMode: process.env.EMBEDDED_AUDIO_MODE === "true",

@@ -8,6 +8,25 @@ import {
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/index.mjs";
 import { ZodError } from "zod";
+import { ScoredCriterion } from "./scorer.js";
+
+export type EvalResult = {
+  transcript: TranscriptEntry[];
+  result: RoleplayResult | "incomplete";
+  scores: ScoredCriterion[];
+};
+
+export type EvalScenario = {
+  roleplay: {
+    name: string;
+    tools: Record<string, ScenarioTool>;
+    initialMessage: string;
+    roleplayerPrompt: string;
+  };
+  criteria: Record<string, string>;
+  maxTurns: number;
+};
+
 
 const debugLog = (...args: any[]): void => {
   if (process.env.DEBUG) {

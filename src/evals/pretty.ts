@@ -1,6 +1,5 @@
 import * as fs from "fs/promises";
-import { TranscriptEntry } from "./roleplay.js";
-import { EvalResult } from "./scenario/types.js";
+import { TranscriptEntry, EvalResult } from "./roleplay.js";
 
 const MAX_TEXT_LENGTH = 60;
 const MAX_MESSAGE_LENGTH = 500
