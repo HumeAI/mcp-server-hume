@@ -1,6 +1,14 @@
 import * as fs from "fs/promises";
 import * as path from "path";
-import { ScenarioTool } from "../roleplay.js";
+import { ScenarioTool, TranscriptEntry, RoleplayResult } from "../roleplay.js";
+import { ScoredCriterion } from "../scorer.js";
+
+// Evaluation result type shared across the codebase
+export type EvalResult = {
+  transcript: TranscriptEntry[];
+  result: RoleplayResult | "incomplete";
+  scores: ScoredCriterion[];
+};
 
 export type EvalScenario = {
   roleplay: {

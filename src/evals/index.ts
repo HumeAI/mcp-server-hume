@@ -1,11 +1,13 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { DESCRIPTIONS } from "../server.js";
-import { Roleplay, RoleplayResult } from "./roleplay.js";
+import { Roleplay, RoleplayResult, TranscriptEntry } from "./roleplay.js";
 import { scoreCriteria, ScoredCriterion } from "./scorer.js";
 import { prettyTranscriptEntry } from "./utils.js";
 import Bottleneck from "bottleneck";
 import { getScenarios } from "./scenario/index.js";
+import { prettyPrintFile } from "./pretty.js";
+import { EvalResult } from "./scenario/types.js";
 
 // Configure a bottleneck limiter for Anthropic API calls
 const anthropicLimiter = new Bottleneck({
@@ -57,12 +59,7 @@ const withAnthropicThrottle = <T>(operation: () => Promise<T>): Promise<T> => {
   return anthropicLimiter.schedule(() => operation());
 };
 
-// Result type for evaluations
-type EvalResult = {
-  transcript: any[];
-  result: RoleplayResult | "incomplete";
-  scores: ScoredCriterion[];
-};
+// Using shared EvalResult type from types.js
 
 // Run a single evaluation with the specified scenario
 const runSingleEval = async (
@@ -95,7 +92,15 @@ const runSingleEval = async (
     withAnthropicThrottle, // Pass the throttle wrapper
   );
 
-  const transcript: any[] = [];
+  // Start with the initial message
+  const initialMessage: TranscriptEntry = {
+    type: "spoke",
+    speaker: "roleplayer",
+    content: scenario.roleplay.initialMessage
+  };
+  
+  const transcript: any[] = [initialMessage];
+  console.error(prettyTranscriptEntry(initialMessage));
 
   // Iterate through transcript entries as they come in
   for await (const entry of roleplay) {
@@ -396,8 +401,14 @@ interface RunArgs {
   runAllScenarios: boolean;
 }
 
+// Pretty command
+interface PrettyArgs {
+  command: "pretty";
+  filePath: string;
+}
+
 // Union type for all command arguments
-type CliArgs = HelpArgs | ListArgs | RunArgs;
+type CliArgs = HelpArgs | ListArgs | RunArgs | PrettyArgs;
 
 // Print help message
 const printHelp = (): void => {
@@ -408,6 +419,7 @@ Usage:
 Commands:
   list                            List available scenarios
   run <scenario...> [options]     Run evaluations for one or more scenarios
+  pretty <file-path>              Format an evaluation result file in human-readable format
 
 Options for 'run':
   --count, -c <number>            Number of evaluations to run per scenario (default: 1)
@@ -420,6 +432,7 @@ Examples:
   bun run src/evals/index.ts run screenreader                 # Run one scenario
   bun run src/evals/index.ts run screenreader voice-designer  # Run multiple scenarios
   bun run src/evals/index.ts run --all -c 3                   # Run all scenarios 3 times each
+  bun run src/evals/index.ts pretty ./current/result-file.json # Format a result file
   `);
 };
 
@@ -480,6 +493,19 @@ const parseRunCommand = (args: string[]): RunArgs => {
   return runArgs;
 };
 
+// Parse pretty command
+const parsePrettyCommand = (args: string[]): PrettyArgs => {
+  if (args.length < 1) {
+    console.error("Error: missing file path for pretty command");
+    process.exit(1);
+  }
+
+  return {
+    command: "pretty",
+    filePath: args[0],
+  };
+};
+
 // Parse command line arguments
 const parseCommandArgs = (args: string[]): CliArgs => {
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -494,6 +520,10 @@ const parseCommandArgs = (args: string[]): CliArgs => {
 
   if (command === "run") {
     return parseRunCommand(args.slice(1));
+  }
+  
+  if (command === "pretty") {
+    return parsePrettyCommand(args.slice(1));
   }
 
   console.error(`Error: unknown command '${command}'`);
@@ -527,6 +557,11 @@ const loadCustomDescriptions = async (
 // Handle list command
 const handleListCommand = async (_args: ListArgs): Promise<void> => {
   await listScenarios();
+};
+
+// Handle pretty command
+const handlePrettyCommand = async (args: PrettyArgs): Promise<void> => {
+  await prettyPrintFile(args.filePath);
 };
 
 // Handle run command
@@ -588,6 +623,10 @@ const executeCommand = async (cliArgs: CliArgs): Promise<void> => {
 
     case "run":
       await handleRunCommand(cliArgs);
+      break;
+      
+    case "pretty":
+      await handlePrettyCommand(cliArgs);
       break;
   }
 };
