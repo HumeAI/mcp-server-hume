@@ -3,17 +3,17 @@ import * as path from "path";
 import { DESCRIPTIONS } from "../../server.js";
 import { getHumeMcpTools } from "../utils.js";
 import {
-  EvalScenario,
   commonCriteria,
   commonInstructions,
   voiceDesignCriteria,
-} from "./types.js";
+} from "./common.js";
 import {
   getContent,
   handler,
   mockDisplayResult,
   mockDisplayUse,
-} from "./helpers.js";
+} from "./mock.js";
+import { EvalScenario } from "../roleplay.js";
 
 export const aiPoetScenario = async (
   descriptions: typeof DESCRIPTIONS,

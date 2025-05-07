@@ -1,5 +1,4 @@
 import { DESCRIPTIONS } from "../../server.js";
-import { EvalScenario } from "./types.js";
 import { screenreaderScenario } from "./screenreader.js";
 import { pickyScreenreaderScenario } from "./picky-screenreader.js";
 import { habitualScreenreaderScenario } from "./habitual-screenreader.js";
@@ -8,6 +7,7 @@ import { voiceExplorerScenario } from "./voice-explorer.js";
 import { aiPoetScenario } from "./ai-poet.js";
 import { aiPlaywrightScenario } from "./ai-playwright.js";
 import { quoteNarratorScenario } from "./quote-narrator.js";
+import { EvalScenario } from "../roleplay.js";
 
 // Get all available scenarios
 export const getScenarios = async (

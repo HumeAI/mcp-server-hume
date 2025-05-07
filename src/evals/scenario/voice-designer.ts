@@ -1,12 +1,12 @@
 import { DESCRIPTIONS } from "../../server.js";
 import { getHumeMcpTools } from "../utils.js";
 import {
-  EvalScenario,
   commonCriteria,
   commonInstructions,
   voiceDesignCriteria,
-} from "./types.js";
-import { handler, mockDisplayResult, mockDisplayUse } from "./helpers.js";
+} from "./common.js";
+import { handler, mockDisplayResult, mockDisplayUse } from "./mock.js";
+import { EvalScenario } from "../roleplay.js";
 
 export const voiceDesignerScenario = async (
   descriptions: typeof DESCRIPTIONS,

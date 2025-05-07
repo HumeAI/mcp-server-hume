@@ -2,13 +2,14 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { DESCRIPTIONS } from "../../server.js";
 import { getHumeMcpTools } from "../utils.js";
-import { EvalScenario, commonCriteria, commonInstructions } from "./types.js";
+import { commonCriteria, commonInstructions } from "./common.js";
 import {
   getContent,
   handler,
   mockDisplayResult,
   mockDisplayUse,
-} from "./helpers.js";
+} from "./mock.js";
+import { EvalScenario } from "../roleplay.js";
 
 export const habitualScreenreaderScenario = async (
   descriptions: typeof DESCRIPTIONS,

@@ -4,7 +4,6 @@ import { v4 as uuid } from "uuid";
 import { DESCRIPTIONS, TTSSchema } from "../../server.js";
 import { ScenarioTool } from "../roleplay.js";
 
-// Mock implementation for the eval tests
 class MockAudioRecord {
   private text: string;
   private generationId: string;
@@ -43,7 +42,6 @@ class MockState {
   }
 }
 
-// Mock functions for tts success and play previous audio
 const mockTtsSuccess = (
   state: MockState,
   generationIdToAudio: Map<string, Buffer>,
@@ -70,7 +68,6 @@ const mockPlayPreviousAudioSuccess = (
   ],
 });
 
-// Common utility functions
 export const handler = async (
   toolName: string,
   input: unknown,
@@ -84,7 +81,7 @@ export const handler = async (
       .utterances.map((u) => u.text)
       .join(" ");
     const generationId = uuid();
-    const audioRecord = mockState.addAudio(text, generationId);
+    mockState.addAudio(text, generationId);
     const audioMap = new Map<string, Buffer>();
     audioMap.set(generationId, Buffer.from("mock audio data"));
     return mockTtsSuccess(mockState, audioMap);
@@ -120,7 +117,6 @@ export const mockDisplayUse = (input: unknown): string =>
 export const mockDisplayResult = (_input: unknown): string =>
   `<AGENT RECEIVED CONTENT>`;
 
-// Create a content retrieval tool for the scenarios
 export const getContent = (
   description: string,
   content: Record<string, string>,
