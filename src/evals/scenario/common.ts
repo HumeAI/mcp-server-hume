@@ -45,7 +45,8 @@ export const commonInstructions = `
 const voiceDesignText = await fs.readFile(
   path.join(__dirname, "/../data/voice_design.txt"),
   "utf-8",
-);
+)
 export const voiceDesignCriteria = {
+  voice_design_collaborative: `When the agent designs a new voice, it should ALWAYS STOP and ask for feedback on how the voice sounds BEFORE saving the voice or generating a significant amount of text with it. There should be a message from the roleplayer providing feedback before any voice is saved or any large source text is spoken.`,
   voice_design_well_done: `When crafting voice descriptions, or presenting the user with voice options, or guiding the user through the process of voice design, the agent should abide by the following directions:\n\n ${voiceDesignText}`,
 };
