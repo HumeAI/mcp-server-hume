@@ -1,5 +1,34 @@
 # Evals
 
+## Summary
+This repository contains a bespoke "role-play" based set of evals.
+
+In this framework, there are three assistants, a "roleplayer", an "agent", and a "scorer". The roleplayer pretends to be a user of the MCP server and is given a realistic scenario to act out. The agent acts as an assistant given access to the tools exposed by the MCP server. Once the roleplayer determines the chat is finished, the "scorer" evaluates the chat transcript according to a set of criteria that reflect what we believe to be good behavior of an assistant using this MCP model.
+
+Read more on [the Hume blog](https://www.hume.ai/blog/roleplays-evals-hume-mcp-server)
+
+
+## Quickstart
+
+From the repo root:
+
+```bash
+# List available scenarios
+bun run src/evals list
+
+# Run a specific scenario
+bun run src/evals run screenreader
+
+# Run multiple scenarios
+bun run src/evals run screenreader voice-designer
+
+# Run all scenarios multiple times
+bun run src/evals run --all -c 3
+
+# Run with alternate tool descriptions
+bun run src/evals run --all --descriptions improved-descriptions.json
+```
+
 ## Overview
 
 When developing the MCP Server, we noticed that using it could be really annoying. The assistant would make unwanted requests, use the wrong voice, fail to apply continuation appropriately, and fail to make reasonable assumptions about the user's intent in using the tools, unless they user was irritatingly specific in prompting it.
