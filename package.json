@@ -13,7 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.53.0",
     "@modelcontextprotocol/sdk": "^1.10.2",
     "@types/chai": "^5.2.1",
     "bottleneck": "^2.19.5",
