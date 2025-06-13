@@ -15,13 +15,13 @@ const cli = meow(
   Options
     --workdir, -w <path>       Set working directory for audio files (default: system temp)
     --(no-)embedded-audio-mode Enable/disable embedded audio mode (default: false)
-    --(no-)instant-mode        Enable/disable instant mode (default: false) (incurs 10% additional cost)
+    --(no-)instant-mode        Enable/disable instant mode (default: true) (incurs 10% additional cost)
     --help, -h                 Show this help message
 
   Environment variables (flags take priority)
     WORKDIR                    Alternative to --workdir
     EMBEDDED_AUDIO_MODE        Alternative to --embedded-audio-mode (set to 'true' to enable)
-    INSTANT_MODE               Alternative to --instant-mode (set to 'true' to enable)
+    INSTANT_MODE               Alternative to --instant-mode (set to 'false' to disable)
     HUME_API_KEY               (Required) Hume API key
 `,
   {
@@ -38,7 +38,7 @@ const cli = meow(
       },
       instantMode: {
         type: "boolean",
-        default: process.env.INSTANT_MODE === 'true',
+        default: !(process.env.INSTANT_MODE === 'false'),
       },
     },
   },
@@ -82,7 +82,7 @@ const main = async () => {
   // Create and setup the McpServer
   const mcpServer = new McpServer({
     name: "hume",
-    version: "0.1.0",
+    version: "0.2.0",
   });
 
   // Configure the server with Hume tools

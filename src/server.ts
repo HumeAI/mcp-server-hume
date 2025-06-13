@@ -286,6 +286,7 @@ export class HumeServer {
     const {
       continuationOf,
       voiceName,
+      provider,
       quiet,
       utterances: utterancesInput,
     } = args;
@@ -309,6 +310,9 @@ export class HumeServer {
       }
       if (voiceName) {
         utterance.voice = { name: voiceName };
+        if (provider) {
+          utterance.voice.provider = provider;
+        }
       }
       utterances.push(utterance);
     }
