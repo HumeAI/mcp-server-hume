@@ -476,7 +476,7 @@ export class HumeServer {
       return {
         content: [
           this.message(
-            `Available voices:\n${voices.data.map((voice) => `${voice.name} (${voice.id})`).join("\n")}`,
+            `Available voices:\n${voices.data.map((voice) => `${voice.name}`).join("\n")}`,
           ),
         ],
       };
