@@ -21,7 +21,7 @@ See [this video](https://www.loom.com/share/b9fb74163db44be28e9adcb61030e368) fo
 
 Click here to add to Cursor:
 
-[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=hume&config=eyJjb21tYW5kIjoibnB4IEBodW1lYWkvbWNwLXNlcnZlciIsImVudiI6eyJIVU1FX0FQSV9LRVkiOiIifX0%3D)
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=hume&config=eyJjb21tYW5kIjoibnB4IEBodW1lYWkvbWNwLXNlcnZlciIsImVudiI6eyJIVU1FX0FQSV9LRVkiOiIiLCJXT1JLRElSIjoiIn19)
 
 Copy the following into your client's MCP configuration (for example, inside the `.mcpServers` property of `claude_desktop_config.json` for Claude Desktop, or of the `mcp.json` for Cursor).
 
