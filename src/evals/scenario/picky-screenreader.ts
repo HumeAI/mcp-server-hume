@@ -69,6 +69,6 @@ export const pickyScreenreaderScenario = async (
       voice_options:
         "The agent should offer or demonstrate different voice options after the user expresses dissatisfaction.",
     },
-    maxTurns: 25,
+    maxTurns: 35,
   };
 };

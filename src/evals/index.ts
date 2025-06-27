@@ -123,17 +123,17 @@ const runMultipleEvals = async (
 ): Promise<EvalResult[]> => {
   await fs.mkdir(outputDir, { recursive: true });
 
-  const descriptionsSource =
-    descriptions === DESCRIPTIONS ? "default" : "custom";
-  const timestamp =
-    customTimestamp || new Date().toISOString().replace(/[:.]/g, "-");
+  // Convert timestamp to unix format for shorter filenames
+  const unixTimestamp = customTimestamp || 
+    Math.floor(new Date().getTime() / 1000).toString();
 
   console.error(`Running ${count} evaluations of ${scenarioName} in parallel`);
 
   const evalTasks = Array.from({ length: count }, (_, i) => {
+    // Create shorter filenames by avoiding repetition and using unix timestamp
     const outputPath = path.join(
       outputDir,
-      `${scenarioName}-${descriptionsSource}-${timestamp}-${i + 1}.json`,
+      `${scenarioName}-${unixTimestamp}-${i + 1}.json`,
     );
     return {
       index: i + 1,
@@ -193,9 +193,8 @@ const run = async (
 ): Promise<void> => {
   await fs.mkdir(outputDir, { recursive: true });
 
-  const descriptionsSource =
-    descriptions === DESCRIPTIONS ? "default" : "custom";
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  // Use unix timestamp for shorter filenames
+  const timestamp = Math.floor(new Date().getTime() / 1000).toString();
 
   console.error(
     `Running ${count} evaluations of ${scenarioNames.length} scenarios: ${scenarioNames.join(", ")}`,
@@ -213,7 +212,7 @@ const run = async (
       outputDir,
       modelName,
       descriptions,
-      `${scenarioName}-${descriptionsSource}-${timestamp}`,
+      `${scenarioName}-${timestamp}`,
     );
 
     return { scenarioName, results };
