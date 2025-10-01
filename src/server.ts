@@ -328,8 +328,10 @@ export class HumeServer {
       // instantMode must be enabled via the command-line flag, and then you must either be providing a voiceName or a continuationOf generation
       instantMode: this.instantMode && (!!voiceName || !!continuationOf),
       format: {type: "wav"},
-      version: modelVersion,
     };
+    if (modelVersion) {
+      request.version = modelVersion;
+    }
 
     if (context) {
       request.context = context;
@@ -390,7 +392,7 @@ export class HumeServer {
         continue
       }
       this.log(
-        `Received audio chunk: ${JSON.stringify(message, (k, _v) => (k === "audio" ? "[Audio Data]" : undefined))}`,
+        `Received audio chunk: ${JSON.stringify(message, (k, v) => (k === "audio" ? "[Audio Data]" : v))}`,
       );
       chunks.push(message);
       const { audio, generationId } = message;
