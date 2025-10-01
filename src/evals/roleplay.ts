@@ -388,6 +388,16 @@ export class Roleplay implements AsyncIterable<TranscriptEntry> {
           "Unexpected: response included block of type 'redacted_thinking'",
         );
       }
+      if (block.type === "server_tool_use") {
+        throw new Error(
+          "Unexpected: response included block of type 'server_tool_use'",
+        );
+      }
+      if (block.type === "web_search_tool_result") {
+        throw new Error(
+          "Unexpected: response included block of type 'web_search_tool_result'",
+        );
+      }
       return exhaustive(block);
     }
     return ret;

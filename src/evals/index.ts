@@ -184,6 +184,8 @@ const runMultipleEvals = async (
   return results;
 };
 
+type Score = number | "n/a";
+
 const run = async (
   scenarioNames: string[],
   count: number,
@@ -202,7 +204,7 @@ const run = async (
   );
 
   const allResults: Record<string, EvalResult[]> = {};
-  const allScores: Record<string, Record<string, number[]>> = {};
+  const allScores: Record<string, Record<string, Score[]>> = {};
 
   const scenarioPromises = scenarioNames.map(async (scenarioName) => {
     console.error(`\n==== Starting scenario: ${scenarioName} ====`);
@@ -353,7 +355,7 @@ const run = async (
     console.error("\nLow Score Highlights (score <= 0.6):");
     lowScoreCriteria.forEach((criteria) => {
       console.error(
-        `\n  ${criteria.criterion} - Avg: ${criteria.averageScore.toFixed(2)}, Low scores: ${criteria.lowScores.length}`,
+        `\n  ${criteria.criterion} - Avg: ${typeof criteria.averageScore === 'number' ? criteria.averageScore.toFixed(2) : 'n/a'}, Low scores: ${criteria.lowScores.length}`,
       );
 
       criteria.lowScores.slice(0, 3).forEach((lowScore) => {

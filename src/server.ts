@@ -104,6 +104,7 @@ export const ttsArgs = (descriptions: typeof DESCRIPTIONS) => ({
     .describe(descriptions.TTS_PROVIDER),
   continuationOf: z.string().optional().describe(descriptions.TTS_CONTINUATION),
   quiet: z.boolean().default(false).describe(descriptions.TTS_QUIET),
+  modelVersion: z.enum(["1", "2"]).optional().describe("Forces use of a specific model version. Only version '1' supports 'description' or generating without a voice, but version '2' supports multilingual."),
 });
 
 export const TTSSchema = (descriptions: typeof DESCRIPTIONS) =>
@@ -288,6 +289,7 @@ export class HumeServer {
       voiceName,
       provider,
       quiet,
+      modelVersion,
       utterances: utterancesInput,
     } = args;
 
@@ -326,6 +328,7 @@ export class HumeServer {
       // instantMode must be enabled via the command-line flag, and then you must either be providing a voiceName or a continuationOf generation
       instantMode: this.instantMode && (!!voiceName || !!continuationOf),
       format: {type: "wav"},
+      version: modelVersion,
     };
 
     if (context) {
@@ -382,12 +385,15 @@ export class HumeServer {
       );
     }
 
-    for await (const audioChunk of stream) {
+    for await (const message of stream) {
+      if (message.type !== 'audio') {
+        continue
+      }
       this.log(
-        `Received audio chunk: ${JSON.stringify(audioChunk, (k, _v) => (k === "audio" ? "[Audio Data]" : undefined))}`,
+        `Received audio chunk: ${JSON.stringify(message, (k, _v) => (k === "audio" ? "[Audio Data]" : undefined))}`,
       );
-      chunks.push(audioChunk);
-      const { audio, generationId } = audioChunk;
+      chunks.push(message);
+      const { audio, generationId } = message;
 
       const buf = Buffer.from(audio, "base64");
       audioPlayer.sendAudio(buf);
