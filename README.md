@@ -62,7 +62,6 @@ The server exposes the following MCP tools:
 Options:
   --workdir, -w <path>       Set working directory for audio files (default: system temp)
   --(no-)embedded-audio-mode Enable/disable embedded audio mode (default: false)
-  --(no-)instant-mode        Enable/disable instant mode (default: false) (incurs 10% additional cost)
   --help, -h                 Show this help message
 ```
 
