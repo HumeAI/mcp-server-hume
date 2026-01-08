@@ -62,7 +62,6 @@ The server exposes the following MCP tools:
 Options:
   --workdir, -w <path>       Set working directory for audio files (default: system temp)
   --(no-)embedded-audio-mode Enable/disable embedded audio mode (default: false)
-  --(no-)instant-mode        Enable/disable instant mode (default: false) (incurs 10% additional cost)
   --help, -h                 Show this help message
 ```
 
@@ -75,5 +74,4 @@ The project includes a [comprehensive evaluation framework](src/evals/README.md)
 - `HUME_API_KEY`: Your Hume AI API key (required)
 - `WORKDIR`: Working directory for audio files (default: system temp directory + "/hume-tts")
 - `EMBEDDED_AUDIO_MODE`: Enable/disable embedded audio mode (default: false, set to 'true' to enable)
-- `INSTANT_MODE`: Enable/disable instant mode (default: false, set to 'true' to enable)
 - `ANTHROPIC_API_KEY`: Required for running evaluations

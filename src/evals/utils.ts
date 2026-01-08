@@ -1,29 +1,28 @@
-import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DESCRIPTIONS, HumeServer } from "../server.js";
-import { ScenarioTool, TranscriptEntry } from "./roleplay.js";
-import { ToolResultBlockParam } from "@anthropic-ai/sdk/resources/index.mjs";
-import * as path from "path";
-import * as os from "os";
+import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { DESCRIPTIONS, HumeServer } from '../server.js';
+import { ScenarioTool, TranscriptEntry } from './roleplay.js';
+import { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
+import * as path from 'path';
+import * as os from 'os';
 
 export const getHumeMcpTools = async (args: {
   descriptions: typeof DESCRIPTIONS;
   handler: (toolName: string, input: unknown) => Promise<CallToolResult>;
   displayUse: (input: unknown) => string;
-  displayResult: (result: ToolResultBlockParam["content"]) => string;
+  displayResult: (result: ToolResultBlockParam['content']) => string;
 }): Promise<Record<string, ScenarioTool>> => {
   const { handler, displayUse, displayResult } = args;
   const humeServer = new HumeServer({
-    instantMode: true,
-    embeddedAudioMode: process.env.EMBEDDED_AUDIO_MODE === "true",
-    workdir: process.env.WORKDIR ?? path.join(os.tmpdir(), "hume-tts"),
+    embeddedAudioMode: process.env.EMBEDDED_AUDIO_MODE === 'true',
+    workdir: process.env.WORKDIR ?? path.join(os.tmpdir(), 'hume-tts'),
     log: console.error,
     humeApiKey: process.env.HUME_API_KEY!,
   });
 
   const server = new McpServer({
-    name: "hume",
-    version: "0.1.0",
+    name: 'hume',
+    version: '0.1.0',
   });
 
   humeServer.setupMcpServer(server);
@@ -32,13 +31,13 @@ export const getHumeMcpTools = async (args: {
 
   const anthropicHandler =
     (toolName: string) =>
-    async (input: unknown): Promise<ToolResultBlockParam["content"]> => {
+    async (input: unknown): Promise<ToolResultBlockParam['content']> => {
       const mcpContent = (await handler(toolName, input)).content;
-      const content: ToolResultBlockParam["content"] = [];
+      const content: ToolResultBlockParam['content'] = [];
       for (const block of mcpContent) {
-        if (block.type === "text") {
+        if (block.type === 'text') {
           content.push({
-            type: "text",
+            type: 'text',
             text: block.text,
           });
           continue;
@@ -63,11 +62,11 @@ export const getHumeMcpTools = async (args: {
 // Format transcript entries for display
 export const prettyTranscriptEntry = (entry: TranscriptEntry): string => {
   switch (entry.type) {
-    case "spoke":
+    case 'spoke':
       return `${entry.speaker}: ${entry.content}`;
-    case "tool_use":
+    case 'tool_use':
       return `Tool use (${entry.name} ${JSON.stringify(entry.input)}`;
-    case "tool_result":
+    case 'tool_result':
       return `Tool response (${entry.name} ${JSON.stringify(entry.content)})`;
   }
 };
