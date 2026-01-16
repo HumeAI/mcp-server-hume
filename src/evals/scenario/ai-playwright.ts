@@ -33,25 +33,17 @@ export const aiPlaywrightScenario = async (
           displayUse: mockDisplayUse,
           displayResult: mockDisplayResult,
         })),
-        get_scene: getContent(
-          "This tool is able to retrieve dialogue for the play.",
-          {
-            full_scene: dialogueContent,
-          },
-        ),
       },
       initialMessage:
-        "I have a scene from my play at /with a mentor and apprentice discussing courage. Could you help me read it with different voices for each character?",
-      roleplayerPrompt: `You are roleplaying a user who has written a play and wants to hear it performed with different character voices.
+        `Can you help me perform the following scene from my play with AI voices?\n\n${dialogueContent}`,
+      roleplayerPrompt: `You are roleplaying a user who has written a play and wants to create audio files of the dialogue being read aloud by two distinct engaging AI voices. 
 
-      You have a scene with two distinct characters: an elderly wise mentor and a young, enthusiastic apprentice discussing the concept of courage. You want the AI to help you access this dialogue and then read it using distinct voices that match each character.
+    Be unsatisfied with the initial voices the AI chooses and provide feedback. Become satisfied after a couple iterations.
 
-      After the agent helps you find the dialogue, express interest in hearing it performed. When the agent uses the tts tool to perform the dialogue, provide feedback on the voices used.
-
-      ${commonInstructions}
-      
-      End the roleplay when you've heard a satisfactory performance of the dialogue that captures both characters with appropriate voices.
-      `,
+    ${commonInstructions}
+    
+    End the roleplay when the entire text of your play has been read aloud correctly by each character.
+    `,
     },
     criteria: {
       ...commonCriteria,
@@ -59,7 +51,11 @@ export const aiPlaywrightScenario = async (
       diarization:
         "The agent should use save_voice to create a voice for each character, and each utterance dialogue belonging to that character should always be voiced with that voice.",
       one_speaker_per_request:
-        "All utterances within a single tts call should be spoken by the same character. The agent should not mix voices within a single tts call.",
+        `All text passed to the tts tool should be for a single voice. The agent should split the text into separate requests for each speaker. Not just separate UTTERANCES, separate REQUESTS.
+Ok: TTS(utterances[{text: ..., voiceName: a}, {text: ..., voiceName: a}])
+Not ok: TTS(utterances[{text: ..., voiceName: a}, {text: ..., voiceName: b}])
+Ok: TTS(utterances[{text: ..., voiceName: a}], TTS(utterances[{text: ..., voiceName: b}]))
+`,
       only_speech:
         "The 'text' passed to the tts tool should contain only the text meant to be spoken. It should be stripped of any stage directions, or speaker names, or section titles",
     },
